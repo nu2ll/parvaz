@@ -19,11 +19,12 @@ const Stories = {
   renderBar(box) {
     if (!box) return;
     const f = this.feed;
-    if (!f || S.settings.stories_hidden || S.archived) { box.hidden = true; return; }
+    // like Web K: the strip only appears when there is something to watch
+    if (!f || S.settings.stories_hidden || S.archived || (!f.me && !f.users.length)) { box.hidden = true; return; }
     const items = [];
     const me = f.me;
     items.push(h('button', { type: 'button', class: 'story-item me', onclick: () => (me ? this.openEntry(me) : this.compose()) },
-      h('span', { class: 'ring' + (me ? ' seen' : '') }, userAvatar(S.me, 's54')), !me ? h('span', { class: 'plus' }, icon('plus')) : null,
+      h('span', { class: 'ring' + (me ? ' mine' : '') }, userAvatar(S.me, 's54')), !me ? h('span', { class: 'plus' }, icon('plus')) : null,
       h('span', { class: 'nm' }, 'استوری من')));
     for (const e of f.users) {
       items.push(h('button', { type: 'button', class: 'story-item', onclick: () => this.openEntry(e) },

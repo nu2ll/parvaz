@@ -236,6 +236,16 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_id, id);
 CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee_id, id);
+
+CREATE TABLE IF NOT EXISTS scheduled (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sender_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  send_at    INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled(send_at);
 `);
 
 // ---- in-place column migrations (older databases; never lose data) ----
@@ -254,12 +264,17 @@ ensureColumn('chats', 'is_forum', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('messages', 'topic_id', 'INTEGER');
 ensureColumn('messages', 'grouped_id', 'TEXT');
 ensureColumn('messages', 'fwd_user_id', 'INTEGER');
+ensureColumn('users', 'verified', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'is_system', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'official_joined', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('chats', 'verified', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('chats', 'is_official', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(chat_id, topic_id, id);
 PRAGMA user_version = ${SCHEMA_VERSION};
 `);
 
-const USER_COLS = 'id, username, display_name, bio, avatar_file, show_last_seen, privacy, created_at, last_seen';
+const USER_COLS = 'id, username, display_name, bio, avatar_file, show_last_seen, privacy, verified, is_system, created_at, last_seen';
 
 const MSG_SELECT = `
 SELECT m.id, m.chat_id, m.sender_id, m.kind, m.text, m.file_id, m.reply_to, m.fwd_name, m.fwd_chat, m.poll, m.meta,
@@ -658,4 +673,40 @@ Object.assign(module.exports, {
   callsFor: (uid) => x.callsFor.all(uid, uid),
   commonChats: (a, b) => x.commonChats.get(a, b).n,
   linksInChat: (chatId, before, limit) => x.linksInChat.all(chatId, before, limit),
+});
+
+// ---------- v3.1: official channel, verification, scheduled messages ----------
+const y = {
+  systemUser: p(`SELECT ${USER_COLS} FROM users WHERE is_system = 1 ORDER BY id LIMIT 1`),
+  markSystem: p('UPDATE users SET is_system = 1, verified = 1 WHERE id = ?'),
+  setUserVerified: p('UPDATE users SET verified = ? WHERE id = ?'),
+  setChatVerified: p('UPDATE chats SET verified = ? WHERE id = ?'),
+  markOfficial: p('UPDATE chats SET verified = 1, is_official = 1 WHERE id = ?'),
+  officialChat: p('SELECT * FROM chats WHERE is_official = 1 ORDER BY id LIMIT 1'),
+  notJoinedOfficial: p('SELECT id FROM users WHERE official_joined = 0 AND is_system = 0'),
+  markJoinedOfficial: p('UPDATE users SET official_joined = 1 WHERE id = ?'),
+  insertScheduled: p('INSERT INTO scheduled (chat_id, sender_id, body, send_at, created_at) VALUES (?, ?, ?, ?, ?)'),
+  scheduledFor: p('SELECT * FROM scheduled WHERE chat_id = ? AND sender_id = ? ORDER BY send_at LIMIT 100'),
+  scheduledCount: p('SELECT COUNT(*) AS n FROM scheduled WHERE chat_id = ? AND sender_id = ?'),
+  scheduledById: p('SELECT * FROM scheduled WHERE id = ?'),
+  deleteScheduled: p('DELETE FROM scheduled WHERE id = ?'),
+  dueScheduled: p('SELECT * FROM scheduled WHERE send_at <= ? ORDER BY send_at LIMIT 50'),
+  setMeta: p('UPDATE messages SET meta = ? WHERE id = ?'),
+};
+Object.assign(module.exports, {
+  systemUser: () => y.systemUser.get(),
+  markSystem: (id) => y.markSystem.run(id),
+  setUserVerified: (id, v) => y.setUserVerified.run(v ? 1 : 0, id),
+  setChatVerified: (id, v) => y.setChatVerified.run(v ? 1 : 0, id),
+  markOfficial: (id) => y.markOfficial.run(id),
+  officialChat: () => y.officialChat.get(),
+  notJoinedOfficial: () => y.notJoinedOfficial.all().map((r) => r.id),
+  markJoinedOfficial: (id) => y.markJoinedOfficial.run(id),
+  insertScheduled: (chatId, senderId, body, at) => Number(y.insertScheduled.run(chatId, senderId, JSON.stringify(body), at, Date.now()).lastInsertRowid),
+  scheduledFor: (chatId, senderId) => y.scheduledFor.all(chatId, senderId),
+  scheduledCount: (chatId, senderId) => y.scheduledCount.get(chatId, senderId).n,
+  scheduledById: (id) => y.scheduledById.get(id),
+  deleteScheduled: (id) => y.deleteScheduled.run(id),
+  dueScheduled: (now = Date.now()) => y.dueScheduled.all(now),
+  setMeta: (id, meta) => y.setMeta.run(meta, id),
 });

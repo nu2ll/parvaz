@@ -141,6 +141,7 @@ App.buildShell = () => {
   el.folders = h('div', { class: 'folders', role: 'tablist' });
   el.storiesBar = h('div', { class: 'stories-bar', hidden: true });
   el.conn = h('div', { class: 'conn' });
+  el.list.addEventListener('scroll', () => el.mainTab.classList.toggle('stories-collapsed', el.list.scrollTop > 24), { passive: true });
   el.menuBtn = h('button', { class: 'ibtn menu-btn', type: 'button', title: 'منو', 'aria-label': 'منو', onclick: () => (App.searching() ? App.endSearch() : App.mainMenu()) },
     h('span', { class: 'burger' }, h('i'), h('i'), h('i')));
   el.lockBtn = ibtn('lock', 'قفل', () => Lock.lockNow(), 'lock-btn');
@@ -149,7 +150,7 @@ App.buildShell = () => {
   el.mainTab = h('div', { class: 'stab main in' },
     h('div', { class: 'side-head' }, el.menuBtn, h('div', { class: 'search-box' }, icon('search'), el.search,
       h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close'))), el.lockBtn),
-    el.storiesBar, el.folders, el.list, el.conn, el.fabNew);
+    el.conn, el.storiesBar, el.folders, el.list, el.fabNew);
   side.replaceChildren(el.mainTab);
   App.side = new UI.Slider(side, el.mainTab);
   let t;
@@ -160,6 +161,7 @@ App.buildShell = () => {
   App.buildChatArea();
   App.buildInfo();
 };
+App.version = () => String(S.config.version || '3.1.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 App.searching = () => !!el.search?.value.trim() || document.activeElement === el.search;
 App.endSearch = () => { el.search.value = ''; el.search.blur(); $('#sidebar').classList.remove('searching'); App.renderSidebar(); };
 
@@ -187,10 +189,10 @@ App.mainMenu = () => {
   ], {
     anchor: el.menuBtn,
     head: h('div', { class: 'menu-head', onclick: () => { UI.closeMenu(); App.openSettings(); } },
-      userAvatar(me, 's40'), h('div', {}, h('div', { class: 'n' }, me.display_name), h('div', { class: 'u' }, '@' + me.username))),
+      userAvatar(me, 's40'), h('div', {}, h('div', { class: 'n' }, me.display_name, me.verified ? R.verified() : null), h('div', { class: 'u' }, '@' + me.username))),
   });
   const m = $('.menu');
-  m?.append(h('div', { class: 'menu-foot' }, `کبوتر وب ${fa(S.config.version || '3.0.0')}`));
+  m?.append(h('div', { class: 'menu-foot' }, `کبوتر وب ${App.version()}`));
 };
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); App.installPrompt = e; });
 
@@ -312,7 +314,7 @@ App.updateTitle = () => {
 };
 
 App.personRow = (u, onClick, extra) => h('div', { class: 'ci', onclick: onClick }, userAvatar(u),
-  h('div', { class: 'body' }, h('div', { class: 'row' }, h('div', { class: 'title' }, h('span', { class: 't', dir: 'auto' }, userName(u)))),
+  h('div', { class: 'body' }, h('div', { class: 'row' }, h('div', { class: 'title' }, h('span', { class: 't', dir: 'auto' }, userName(u)), u.verified ? R.verified() : null)),
     h('div', { class: 'row' }, h('div', { class: 'preview' + (u.online ? ' online' : ''), dir: 'auto' }, extra || (u.online ? 'آنلاین' : '@' + u.username)))));
 
 App.renderSearchHome = () => {
@@ -354,7 +356,7 @@ App.renderSearch = async (q) => {
       users.forEach((u) => list.append(App.personRow(u, () => App.openPrivateWith(u.username), '@' + u.username)));
       chats.forEach((c) => list.append(h('div', { class: 'ci', onclick: () => App.joinDialog({ username: c.username }) },
         avatarEl({ name: c.title, avatar: c.avatar, seed: c.id * 7 + 3 }),
-        h('div', { class: 'body' }, h('div', { class: 'row' }, h('div', { class: 'title' }, icon(c.type === 'channel' ? 'channel' : 'group'), h('span', { class: 't', dir: 'auto' }, c.title))),
+        h('div', { class: 'body' }, h('div', { class: 'row' }, h('div', { class: 'title' }, h('span', { class: 't', dir: 'auto' }, c.title), c.verified ? R.verified() : null)),
           h('div', { class: 'row' }, h('div', { class: 'preview' }, `@${c.username} · ${membersText(c)}`))))));
       if (res.messages.length) {
         list.append(h('div', { class: 'section-title' }, 'پیام‌ها'));
@@ -680,7 +682,9 @@ App.openChat = async (id, opts = {}) => {
   el.empty.hidden = true;
   el.head.hidden = el.messages.hidden = el.bottom.hidden = el.topbars.hidden = false;
   App.renderSidebar();
+  App.scheduledCount = 0;
   App.renderChatChrome();
+  App.loadScheduledCount();
   App.sepId = null;
   const key = App.mkey();
   const st = S.msgs.get(key);
@@ -755,7 +759,7 @@ App.renderHeader = (c = S.chats.get(S.active)) => {
   const st = R.chatStatus(c, c.is_forum ? S.topic ?? 0 : undefined);
   if (S.select) return App.renderSelectHeader();
   el.moreBtn = ibtn('more', 'بیشتر', (e) => App.headerMenu(c, e.currentTarget));
-  const canCall = c.type === 'private' && !isSaved(c) && !c.peer.blocked;
+  const canCall = c.type === 'private' && !isSaved(c) && !c.peer.blocked && !c.peer.system;
   const title = t ? (t.general ? 'عمومی' : t.title) : chatTitle(c);
   const status = t ? (st.typing ? st.text : chatTitle(c)) : st.text;
   el.head.replaceChildren(
@@ -763,7 +767,7 @@ App.renderHeader = (c = S.chats.get(S.active)) => {
     h('div', { class: 'who', onclick: () => App.toggleInfo() },
       t ? App.topicIcon(t, 's40') : chatAvatar(c, 's42'),
       h('div', { class: 'wt' },
-        h('div', { class: 't', dir: 'auto' }, title, c.muted ? icon('muted', 'mute-ic') : null),
+        h('div', { class: 't', dir: 'auto' }, h('span', { class: 'tt' }, title), !t && c.verified ? R.verified() : null, c.muted ? icon('muted', 'mute-ic') : null),
         status ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, status, st.typing ? R.typingDots() : null) : null)),
     canCall ? ibtn('phone', 'تماس', () => App.startCall(c, false), 'call-btn') : null,
     ibtn('search', 'جستجو در گفتگو', () => App.openChatSearch()),
@@ -774,18 +778,20 @@ App.headerMenu = (c, anchor) => {
   const priv = c.type === 'private' && !isSaved(c);
   const p = c.peer;
   UI.menu([
-    priv && !p.blocked ? { icon: 'video', label: 'تماس تصویری', onClick: () => App.startCall(c, true) } : null,
+    priv && !p.blocked && !p.system ? { icon: 'video', label: 'تماس تصویری', onClick: () => App.startCall(c, true) } : null,
     { icon: 'info', label: c.type === 'private' ? 'مشاهده پروفایل' : c.type === 'channel' ? 'اطلاعات کانال' : 'اطلاعات گروه', onClick: () => App.openInfo(c.id) },
     !isSaved(c) ? { icon: c.muted ? 'bell' : 'muted', label: c.muted ? 'فعال کردن اعلان' : 'بی‌صدا کردن', onClick: () => App.chatSetting(c, { muted: !c.muted }) } : null,
     { icon: 'select', label: 'انتخاب پیام‌ها', onClick: () => App.enterSelect() },
+    App.scheduledCount ? { icon: 'clock', label: 'پیام‌های زمان‌بندی‌شده', sub: fa(App.scheduledCount), onClick: () => App.scheduledDialog(c) } : null,
     c.is_forum ? { icon: 'topic', label: 'فهرست تاپیک‌ها', onClick: () => App.openForum(c.id) } : null,
     c.is_forum ? { icon: 'plus', label: 'تاپیک جدید', onClick: () => App.topicDialog(c) } : null,
-    priv ? { icon: 'personAdd', label: p.is_contact ? 'ویرایش مخاطب' : 'افزودن به مخاطبین', onClick: () => App.contactDialog(p) } : null,
+    priv && !p.system ? { icon: 'personAdd', label: p.is_contact ? 'ویرایش مخاطب' : 'افزودن به مخاطبین', onClick: () => App.contactDialog(p) } : null,
     c.can_manage ? { icon: 'edit', label: 'ویرایش', onClick: () => App.editChatDialog(c) } : null,
     c.can_manage ? { icon: 'personAdd', label: c.type === 'channel' ? 'افزودن مشترک' : 'افزودن عضو', onClick: () => App.addMembersDialog(c) } : null,
     c.can_manage ? { icon: 'link', label: 'لینک دعوت', onClick: () => App.inviteDialog(c) } : null,
     'sep',
-    priv ? { icon: 'block', label: p.blocked ? 'رفع مسدودی' : 'مسدود کردن کاربر', danger: !p.blocked, onClick: () => App.toggleBlock(p) } : null,
+    S.me.is_admin && !isSaved(c) ? { icon: 'shield', label: c.verified ? 'برداشتن تیک آبی' : 'دادن تیک آبی', onClick: () => App.setVerified(c, !c.verified) } : null,
+    priv && !p.system ? { icon: 'block', label: p.blocked ? 'رفع مسدودی' : 'مسدود کردن کاربر', danger: !p.blocked, onClick: () => App.toggleBlock(p) } : null,
     { icon: c.type === 'private' ? 'trash' : 'logout', label: c.type === 'private' ? 'حذف گفتگو' : c.type === 'channel' ? 'ترک کانال' : 'ترک گروه', danger: true, onClick: () => App.leaveOrDelete(c) },
   ], { anchor, alignStart: true });
 };
@@ -1224,7 +1230,15 @@ App.onSendBtn = () => {
   App.startRecording();
 };
 App.sendBtnMenu = (e) => {
-  if (el.input?.value.trim() || S.rec) return;
+  if (S.rec) return;
+  if (el.input?.value.trim() && !S.edit) {
+    const c = S.chats.get(S.active);
+    return UI.menu([
+      !isSaved(c) ? { icon: 'muted', label: 'ارسال بدون صدا', onClick: () => App.sendText({ silent: true }) } : null,
+      { icon: 'clock', label: isSaved(c) ? 'یادآوری' : 'زمان‌بندی پیام', onClick: () => App.scheduleDialog() },
+      { icon: 'link', label: 'ارسال بدون پیش‌نمایش لینک', onClick: () => App.sendText({ no_preview: true }) },
+    ], { anchor: el.sendBtn, up: true });
+  }
   App.recMode = App.recMode === 'round' ? 'voice' : 'round';
   save('recMode', App.recMode);
   App.updateSendBtn();
@@ -1307,7 +1321,7 @@ App.sendTyping = (action, force) => {
 App.topicFields = (c) => (c?.is_forum ? { topic_id: S.topic ?? 0 } : {});
 App.afterSend = () => { App.sepId = null; App.scrollBottom(); Wallpaper.animate(); };
 
-App.sendText = async () => {
+App.sendText = async (extra = {}) => {
   const c = S.chats.get(S.active);
   if (!c || !el.input) return;
   const text = el.input.value.trim();
@@ -1333,7 +1347,7 @@ App.sendText = async () => {
     const parts = [];
     for (let i = 0; i < text.length; i += 4096) parts.push(text.slice(i, i + 4096));
     for (const [n, part] of parts.entries()) {
-      const body = { type: 'send', chat_id: c.id, text: part, reply_to: n === 0 && reply ? reply.id : null, ...App.topicFields(c) };
+      const body = { type: 'send', chat_id: c.id, text: part, reply_to: n === 0 && reply ? reply.id : null, ...App.topicFields(c), ...extra };
       if (!App.wsSend(body)) App.onMessage((await api('POST', `/api/chats/${c.id}/messages`, body)).message);
     }
     App.afterSend();
@@ -1704,28 +1718,73 @@ App.searchInChat = (q) => { if (S.active) App.openChatSearch(q); };
 /* =====================================================================
    REALTIME
    ===================================================================== */
+// Web K style connection status: a thin bar under the search, shown only if the problem lasts
+App.setConn = (state) => {
+  App.connState = state;
+  clearTimeout(App.connTimer);
+  if (!el.conn) return;
+  if (!state) { el.conn.classList.remove('show'); return; }
+  const text = { offline: 'منتظر شبکه…', connecting: 'در حال اتصال…', updating: 'در حال به‌روزرسانی…' }[state];
+  App.connTimer = setTimeout(() => {
+    el.conn.replaceChildren(h('span', { class: 'spinner' }), h('span', {}, text));
+    el.conn.classList.add('show');
+  }, state === 'updating' ? 600 : 1500);
+};
+App.dropSocket = () => {
+  const ws = S.ws;
+  S.ws = null;
+  S.wsReady = false;
+  clearTimeout(App.probeTimer); App.probeTimer = null;
+  clearTimeout(App.openTimer);
+  for (const p of wsPending.values()) p.reject(new ApiError('network', ERRORS.network));
+  wsPending.clear();
+  if (ws) { ws.onclose = ws.onmessage = ws.onopen = ws.onerror = null; try { ws.close(); } catch {} }
+};
+App.scheduleReconnect = (delay) => {
+  clearTimeout(App.retryTimer);
+  App.retryTimer = setTimeout(() => App.connect(), delay);
+};
 App.connect = () => {
-  if (!S.token) return;
+  if (!S.token || !S.me) return;
+  clearTimeout(App.retryTimer);
+  App.dropSocket();
   S.manualClose = false;
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   S.ws = ws;
-  el.conn.textContent = 'در حال اتصال…';
+  App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
+  // a socket that never becomes ready (captive portals, frozen proxies) is retried quickly
+  App.openTimer = setTimeout(() => { if (S.ws === ws && !S.wsReady) { App.dropSocket(); App.scheduleReconnect(500); } }, 10000);
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: S.token }));
   ws.onmessage = (e) => { let ev; try { ev = JSON.parse(e.data); } catch { return; } App.onEvent(ev); };
+  ws.onerror = () => {};
   ws.onclose = (e) => {
     if (S.ws !== ws) return;
-    S.ws = null;
-    S.wsReady = false;
-    for (const p of wsPending.values()) p.reject(new ApiError('network', ERRORS.network));
-    wsPending.clear();
+    App.dropSocket();
     if (S.manualClose || !S.token) return;
-    if (e.code === 4001) { api('GET', '/api/me').then(() => setTimeout(App.connect, 1000)).catch(() => {}); return; }
-    const delay = Math.min(15000, 800 * 2 ** S.retry++);
-    el.conn.textContent = navigator.onLine === false ? 'منتظر شبکه…' : 'اتصال قطع شد، تلاش دوباره…';
-    setTimeout(App.connect, delay);
+    if (e.code === 4001) { api('GET', '/api/me').then(() => App.scheduleReconnect(800)).catch(() => {}); return; }
+    App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
+    App.scheduleReconnect(document.hidden ? Math.min(30000, 1000 * 2 ** S.retry++) : Math.min(5000, 400 * 2 ** S.retry++));
   };
 };
-window.addEventListener('online', () => { if (S.token && !S.ws) { S.retry = 0; App.connect(); } });
+// Mobile browsers freeze background tabs and silently kill sockets. When the page comes back,
+// check the socket right away instead of waiting for a (frozen) timer: no refresh needed.
+App.probe = () => {
+  if (!S.ws || !S.wsReady || App.probeTimer) return;
+  App.wsSend({ type: 'ping' });
+  App.probeTimer = setTimeout(() => { App.probeTimer = null; App.dropSocket(); App.connect(); }, 5000);
+};
+App.ensureConnected = () => {
+  if (!S.token || !S.me || S.manualClose) return;
+  const ws = S.ws;
+  if (!ws || ws.readyState >= 2) { S.retry = 0; App.connect(); }
+  else if (ws.readyState === 1 && S.wsReady) App.probe();
+};
+window.addEventListener('online', () => { S.retry = 0; App.ensureConnected(); });
+window.addEventListener('offline', () => App.setConn('offline'));
+window.addEventListener('focus', () => App.ensureConnected());
+window.addEventListener('pageshow', () => App.ensureConnected());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) App.ensureConnected(); });
+setInterval(() => { if (!document.hidden) App.probe(); }, 25000);
 
 App.onEvent = async (ev) => {
   if ((ev.type === 'ack' || ev.type === 'error') && ev.ref != null && wsPending.has(ev.ref)) {
@@ -1737,11 +1796,15 @@ App.onEvent = async (ev) => {
   }
   if (ev.type.startsWith('call_') && typeof Calls !== 'undefined') return Calls.onEvent(ev);
   switch (ev.type) {
+    case 'pong':
+      clearTimeout(App.probeTimer); App.probeTimer = null;
+      break;
     case 'ready': {
       S.wsReady = true;
       S.retry = 0;
-      el.conn.textContent = '';
+      clearTimeout(App.openTimer);
       S.me = ev.user;
+      App.setConn(S.everConnected ? 'updating' : null);
       if (S.everConnected) {
         // resync everything that may have happened while we were offline
         for (const st of S.msgs.values()) st.stale = true;
@@ -1755,7 +1818,9 @@ App.onEvent = async (ev) => {
           App.markRead();
         } else if (S.active) App.showEmpty();
         if (typeof Stories !== 'undefined') Stories.load();
+        if (App.forumTab) App.loadTopics(App.forumTab.chatId).then(() => App.renderTopics(App.forumTab?.chatId)).catch(() => {});
       }
+      App.setConn(null);
       S.everConnected = true;
       break;
     }
@@ -1838,6 +1903,12 @@ App.onEvent = async (ev) => {
     }
     case 'me':
       S.me = ev.user;
+      App.renderSidebar();
+      if (App.settingsTab && App.side.top() === App.settingsTab) App.settingsTab.opts.onShow?.();
+      for (const c of S.chats.values()) if (isSaved(c)) Object.assign(c.peer, ev.user);
+      break;
+    case 'scheduled':
+      if (S.active === ev.chat_id) App.loadScheduledCount();
       break;
     case 'settings':
       Object.assign(S.settings, ev.settings);
@@ -1930,17 +2001,18 @@ App.beep = () => {
 };
 App.notify = (c, m) => {
   if (c.muted || m.sender.id === S.me.id || m.kind === 'service') return;
+  const silent = !!m.silent;
   const typeKey = c.type === 'private' ? 'notify_private' : c.type === 'group' ? 'notify_group' : 'notify_channel';
   if (S.settings[typeKey] === false) return;
   const visible = !document.hidden && App.isActiveKey(App.msgKeyOf(m));
   if (visible) return;
-  if (S.settings.sound && !document.hidden) App.beep();
+  if (S.settings.sound && !silent && !document.hidden) App.beep();
   if (!S.settings.notify || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const preview = S.settings.notify_preview !== false;
     const n = new Notification(chatTitle(c), {
       body: preview ? (c.type === 'group' ? m.sender.display_name + ': ' : '') + R.previewText(m) : 'پیام جدید',
-      tag: 'chat-' + c.id, icon: (preview && c.avatar) || '/icon.svg', silent: !S.settings.sound,
+      tag: 'chat-' + c.id, icon: (preview && c.avatar) || '/icon.svg', silent: !S.settings.sound || silent,
     });
     n.onclick = () => { window.focus(); App.openChat(c.id, c.is_forum ? { topic: m.topic_id ?? 0 } : {}); n.close(); };
   } catch {}

@@ -2,6 +2,7 @@
 // Runs the real web client (public/js/*.js) inside Node with a tiny fake DOM, wired to a real server
 // over real HTTP + WebSocket. Catches runtime errors in UI code paths without needing a browser.
 process.env.DB_PATH = ':memory:';
+process.env.OFFICIAL_CHANNEL = '0'; // official channel/service chat covered in features.js
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');

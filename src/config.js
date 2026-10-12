@@ -23,6 +23,10 @@ const uploadsDir =
 
 module.exports = {
   onRailway,
+  // users allowed to post in the official channel and to grant blue ticks, e.g. ADMIN_USERNAMES=Null,arown
+  adminUsernames: list(env.ADMIN_USERNAMES).map((u) => u.replace(/^@/, '').toLowerCase()),
+  officialChannel: env.OFFICIAL_CHANNEL !== '0',
+  linkPreviews: env.LINK_PREVIEWS !== '0',
   hasPersistentVolume: !onRailway || !!railwayVolume || !!env.DB_PATH,
   port: Number(env.PORT) || 8080,
   host: env.HOST || '0.0.0.0',

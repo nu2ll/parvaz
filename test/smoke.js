@@ -1,6 +1,7 @@
 'use strict';
 // End-to-end test: boots the server on a random port with an in-memory DB and drives it like real clients.
 process.env.DB_PATH = ':memory:';
+process.env.OFFICIAL_CHANNEL = '0'; // official channel + service chat are covered in test/features.js
 const net = require('node:net');
 const { start } = require('../server');
 

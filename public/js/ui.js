@@ -37,16 +37,23 @@ UI.menu = (items, opts = {}) => {
   document.body.append(backdrop, menu);
   if (extra) document.body.append(extra);
   openMenuEl = { menu, backdrop, extra };
-  const r = menu.getBoundingClientRect();
-  let x, y;
+  // offsetWidth ignores the opening scale animation (getBoundingClientRect would under-measure and clip the menu)
+  const r = { width: menu.offsetWidth || menu.getBoundingClientRect().width, height: menu.offsetHeight || menu.getBoundingClientRect().height };
+  let x, y, originX;
   if (opts.anchor) {
     const a = opts.anchor.getBoundingClientRect();
-    x = opts.alignStart ? a.right - r.width : a.left;
+    // RTL: open towards the inside of the screen, aligned to whichever edge of the anchor fits
+    x = a.right - r.width;
+    originX = 'right';
+    if (x < 8) { x = a.left; originX = 'left'; }
     y = opts.up ? a.top - r.height - 6 : a.bottom + 6;
-    menu.classList.add(opts.up ? 'from-bottom' : 'from-top');
+    if (!opts.up && y + r.height > innerHeight - 8) y = a.top - r.height - 6;
+    menu.style.transformOrigin = `${originX} ${opts.up ? 'bottom' : 'top'}`;
   } else {
     x = opts.x - r.width; y = opts.y;
-    if (x < 8) x = opts.x;
+    originX = 'right';
+    if (x < 8) { x = opts.x; originX = 'left'; }
+    menu.style.transformOrigin = `${originX} top`;
   }
   const extraH = extra ? 58 : 0;
   x = Math.max(8, Math.min(x, innerWidth - r.width - 8));
@@ -55,8 +62,8 @@ UI.menu = (items, opts = {}) => {
   menu.style.left = x + 'px';
   menu.style.top = y + 'px';
   if (extra) {
-    const er = extra.getBoundingClientRect();
-    extra.style.left = Math.max(8, Math.min(x + r.width - (er.width || 300), innerWidth - (er.width || 300) - 8)) + 'px';
+    const ew = extra.offsetWidth || 300;
+    extra.style.left = Math.max(8, Math.min(x + r.width - ew, innerWidth - ew - 8)) + 'px';
     extra.style.top = (y - 54) + 'px';
   }
   return menu;
@@ -281,6 +288,35 @@ UI.longPress = (el, cb) => {
   el.addEventListener('touchmove', (e) => { const p = e.touches[0]; if (Math.hypot(p.clientX - sx, p.clientY - sy) > 10) cancel(); }, { passive: true });
   el.addEventListener('touchend', cancel);
   el.addEventListener('touchcancel', cancel);
+};
+
+/* swipe a bubble sideways to reply (touch, like Telegram mobile) */
+UI.swipeReply = (row, bubble, cb) => {
+  let sx = 0, sy = 0, dx = 0, active = false, locked = false;
+  const ic = h('span', { class: 'swipe-ic' }, icon('reply'));
+  bubble.addEventListener('touchstart', (e) => { const p = e.touches[0]; sx = p.clientX; sy = p.clientY; dx = 0; active = true; locked = false; }, { passive: true });
+  bubble.addEventListener('touchmove', (e) => {
+    if (!active) return;
+    const p = e.touches[0];
+    const mx = p.clientX - sx, my = p.clientY - sy;
+    if (!locked) { if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { active = false; return; } if (Math.abs(mx) > 10) locked = true; else return; }
+    dx = Math.min(0, Math.max(-90, mx));
+    bubble.style.transform = `translateX(${dx}px)`;
+    if (!ic.parentNode) row.append(ic);
+    ic.style.opacity = String(Math.min(1, -dx / 60));
+    ic.classList.toggle('ready', dx <= -60);
+  }, { passive: true });
+  const end = () => {
+    if (!active) return;
+    active = false;
+    bubble.style.transition = 'transform .2s';
+    bubble.style.transform = '';
+    setTimeout(() => (bubble.style.transition = ''), 220);
+    ic.remove();
+    if (dx <= -60) { navigator.vibrate?.(10); cb(); }
+  };
+  bubble.addEventListener('touchend', end);
+  bubble.addEventListener('touchcancel', end);
 };
 
 /* ripple effect on rows/buttons (Web K c-ripple) */

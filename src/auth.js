@@ -70,4 +70,4 @@ const revoke = (tokenHash) => repo.deleteSession(tokenHash);
 
 setInterval(() => repo.deleteExpiredSessions(Date.now()), 60 * 60 * 1000).unref();
 
-module.exports = { hashPassword, verifyPassword, burnTime, createSession, userFromToken, authenticate, revoke, hashToken };
+module.exports = { hashPassword, verifyPassword, burnTime, createSession, userFromToken, authenticate, revoke, hashToken, describeDevice };

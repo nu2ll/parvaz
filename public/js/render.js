@@ -148,8 +148,25 @@ R.chatStatus = (c, topicId) => {
   const typing = R.typingText(c.id, topicId);
   if (typing) return { text: typing, accent: true, typing: true };
   if (isSaved(c)) return { text: '' };
+  if (c.type === 'private' && c.peer.system) return { text: 'اعلان‌های سرویس' };
   if (c.type === 'private') return { text: c.peer.blocked ? 'مسدود شده' : lastSeenText(c.peer), accent: c.peer.online };
   return { text: membersText(c) };
+};
+// Telegram's verified badge: blue rosette with a white check
+R.verified = (cls = '') => {
+  const s = document.createElementNS(SVGNS, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('class', 'verified ' + cls);
+  s.setAttribute('aria-label', 'تأییدشده');
+  const a = document.createElementNS(SVGNS, 'path');
+  a.setAttribute('class', 'vb-bg');
+  a.setAttribute('d', 'M12 1.6l2.36 1.73 2.92-.08.9 2.78 2.38 1.7-.9 2.78.9 2.78-2.38 1.7-.9 2.78-2.92-.08L12 19.1l-2.36-1.73-2.92.08-.9-2.78-2.38-1.7.9-2.78-.9-2.78 2.38-1.7.9-2.78 2.92.08z');
+  a.setAttribute('transform', 'translate(0 1.65)');
+  const b = document.createElementNS(SVGNS, 'path');
+  b.setAttribute('class', 'vb-check');
+  b.setAttribute('d', 'M10.6 15.4l-3.3-3.3 1.4-1.4 1.9 1.9 4.7-4.7 1.4 1.4z');
+  s.append(a, b);
+  return s;
 };
 R.typingDots = () => h('span', { class: 'tdots' }, h('i'), h('i'), h('i'));
 const nameColor = (id) => 'c' + (Math.abs(id) % 7);
@@ -185,8 +202,8 @@ R.chatItem = (c) => {
     h('div', { class: 'body' },
       h('div', { class: 'row' },
         h('div', { class: 'title' },
-          c.type === 'group' ? icon(c.is_forum ? 'topic' : 'group') : c.type === 'channel' ? icon('channel') : null,
           h('span', { class: 't', dir: 'auto' }, chatTitle(c)),
+          c.verified ? R.verified() : null,
           c.muted ? icon('muted', 'mute-ic') : null),
         timeEl),
       h('div', { class: 'row' }, preview, end)));
@@ -417,6 +434,17 @@ R.reactions = (m) => {
       h('span', { class: 'e' }, r.emoji), fa(r.count))));
 };
 
+R.webpage = (m) => {
+  const p = m.preview;
+  const big = p.image && !p.description;
+  return h('a', { class: 'webpage' + (big ? ' big' : ''), href: p.url, target: '_blank', rel: 'noopener noreferrer nofollow', onclick: (e) => e.stopPropagation() },
+    h('div', { class: 'wp-body' },
+      p.site ? h('div', { class: 'wp-site', dir: 'auto' }, p.site) : null,
+      p.title ? h('div', { class: 'wp-title', dir: 'auto' }, p.title) : null,
+      p.description ? h('div', { class: 'wp-desc', dir: 'auto' }, p.description) : null),
+    p.image ? h('img', { class: 'wp-img', src: p.image, alt: '', loading: 'lazy' }) : null);
+};
+
 R.quote = (m) => {
   const r = m.reply;
   if (!r) return null;
@@ -497,6 +525,7 @@ R.message = (c, m, flags = {}) => {
     if (media) bubble.append(media);
   }
   if (m.kind === 'poll') bubble.append(R.poll(c, m));
+  const webpage = m.preview && !group ? R.webpage(m) : null;
 
   const metaMsg = group ? group.at(-1) : m;
   const reactMsg = group ? group.find((x) => x.reactions?.length) || m : m;
@@ -504,8 +533,12 @@ R.message = (c, m, flags = {}) => {
   const text = textMsg ? textMsg.text : '';
   if (text && m.kind !== 'poll') {
     const t = h('div', { class: 'text' + (big ? ' big-emoji e' + Math.min(3, [...text.matchAll(/\p{Extended_Pictographic}/gu)].length) : ''), dir: 'auto' }, R.text(text));
-    t.append(R.meta(c, metaMsg));
-    bubble.append(h('div', { class: 'text-wrap' }, t));
+    if (webpage) {
+      bubble.append(h('div', { class: 'text-wrap' }, t), webpage, h('div', { class: 'text-wrap' }, R.meta(c, metaMsg)));
+    } else {
+      t.append(R.meta(c, metaMsg));
+      bubble.append(h('div', { class: 'text-wrap' }, t));
+    }
   } else if (metaOverlay) {
     bubble.append(R.meta(c, metaMsg, true));
   } else if (!reactMsg.reactions?.length) {
@@ -542,6 +575,7 @@ R.message = (c, m, flags = {}) => {
       App.messageMenu(c, m, e, group);
     });
     UI.longPress(bubble, (e) => App.messageMenu(c, m, e, group));
+    if (c.can_post) UI.swipeReply(el, bubble, () => App.startReply(m));
     el.addEventListener('click', (e) => { if (S.select && !e.target.closest('.album .photo')) { e.preventDefault(); App.toggleSelect(m, group); } });
     el.addEventListener('dblclick', (e) => { if (S.select) return; if (!e.target.closest('a, button, video, .photo') && c.can_post) { getSelection()?.removeAllRanges(); App.startReply(m); } });
   }

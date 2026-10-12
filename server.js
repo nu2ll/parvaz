@@ -100,12 +100,18 @@ function createServer() {
 
 function start(port = config.port, host = config.host) {
   require('./src/stickers').seedBuiltin();
+  require('./src/official').setup();
+  require('./src/scheduled').start();
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once('error', reject);
     server.listen(port, host, () => resolve(server));
   });
 }
+
+// never let one bad request take the whole server (and every live connection) down
+process.on('uncaughtException', (e) => console.error('[uncaught]', e));
+process.on('unhandledRejection', (e) => console.error('[unhandled]', e));
 
 if (require.main === module) {
   start()

@@ -1,6 +1,7 @@
 'use strict';
 // End-to-end tests for v3 features: privacy, contacts, blocks, 2FA, topics, stickers, GIFs, albums, stories, calls.
 process.env.DB_PATH = ':memory:';
+process.env.ADMIN_USERNAMES = 'amir';
 const { start } = require('../server');
 
 let base, wsBase, passed = 0;
@@ -51,6 +52,24 @@ const upload = async (token, data, type, name) => (await call('POST', '/api/file
   const A = await reg('amir', 'امیر'), B = await reg('bahar', 'بهار'), C = await reg('cyrus', 'کوروش');
   const pc = (await call('POST', '/api/chats/private', { username: 'bahar' }, A.token)).data.chat;
   await call('POST', `/api/chats/${pc.id}/messages`, { text: 'سلام' }, A.token);
+
+  console.log('official channel + service account + blue ticks');
+  let chatsB = (await call('GET', '/api/chats', null, B.token)).data.chats;
+  const off = chatsB.find((c) => c.username === 'kabootar');
+  ok(off && off.verified && off.official && off.type === 'channel' && !off.can_post, 'new users are subscribed to the verified official channel');
+  ok(off.unread === 1 && off.last_message.text.includes('کبوتر'), 'welcome post is waiting unread');
+  const svcChat = chatsB.find((c) => c.type === 'private' && c.peer.system);
+  ok(svcChat && svcChat.verified && !svcChat.can_post && svcChat.last_message.text.includes('خوش آمدید'), 'service account sends a welcome note');
+  ok((await call('POST', `/api/chats/${svcChat.id}/messages`, { text: 'hi' }, B.token)).status === 403, 'service chat is read-only');
+  await call('POST', '/api/auth/login', { username: 'bahar', password: 'supersecret1' });
+  const svcHist = (await call('GET', `/api/chats/${svcChat.id}/messages`, null, B.token)).data.messages;
+  ok(svcHist.at(-1).text.includes('ورود جدید'), 'new login notice from the service account');
+  const chatsA0 = (await call('GET', '/api/chats', null, A.token)).data.chats;
+  ok(chatsA0.find((c) => c.username === 'kabootar').can_post, 'ADMIN_USERNAMES can post in the official channel');
+  ok((await call('GET', '/api/me', null, A.token)).data.user.is_admin === true, 'admin flag on /api/me');
+  ok((await call('POST', '/api/admin/verify', { username: 'bahar', verified: true }, B.token)).status === 403, 'only admins grant blue ticks');
+  ok((await call('POST', '/api/admin/verify', { username: 'bahar', verified: true }, A.token)).data.verified === true, 'admin verifies a user');
+  ok((await call('GET', `/api/users/${B.user.id}`, null, C.token)).data.user.verified === true, 'blue tick visible to others');
 
   console.log('contacts + privacy');
   let r = await call('POST', '/api/contacts', { username: 'bahar', name: 'بهار جان' }, A.token);
@@ -160,6 +179,22 @@ const upload = async (token, data, type, name) => (await call('POST', '/api/file
   ok(r.data.message.story?.id === sid, 'reply to story');
   ok((await call('GET', '/api/stories', null, C.token)).data.users.length === 0, 'strangers do not see the story');
   ok((await call('DELETE', `/api/stories/${sid}`, null, B.token)).status === 200, 'delete story');
+
+  console.log('scheduled + silent + link previews');
+  r = await call('POST', `/api/chats/${pc.id}/scheduled`, { text: 'بعداً', send_at: Date.now() + 6000 }, A.token);
+  ok(r.status === 201 && r.data.scheduled.text === 'بعداً', 'message scheduled');
+  ok((await call('GET', `/api/chats/${pc.id}/scheduled`, null, A.token)).data.scheduled.length === 1, 'scheduled list');
+  ok((await call('POST', `/api/chats/${pc.id}/scheduled`, { text: 'x', send_at: Date.now() - 1000 }, A.token)).status === 400, 'past time rejected');
+  await new Promise((res) => setTimeout(res, 8500));
+  let last = (await call('GET', `/api/chats/${pc.id}/messages`, null, B.token)).data.messages.at(-1);
+  ok(last.text === 'بعداً', 'scheduled message delivered on time');
+  r = await call('POST', `/api/chats/${pc.id}/messages`, { text: 'شب بخیر', silent: true }, A.token);
+  ok(r.data.message.silent === true, 'silent message flag');
+  const pv = require('../src/preview');
+  ok(pv._privateIp('127.0.0.1') && pv._privateIp('10.1.2.3') && pv._privateIp('::1') && pv._privateIp('192.168.1.5') && !pv._privateIp('8.8.8.8'), 'SSRF guard blocks private addresses');
+  ok((await pv._safeUrl('http://localhost:8080/x')) === null && (await pv._safeUrl('http://127.0.0.1/')) === null, 'SSRF guard blocks localhost URLs');
+  const parsed = pv._parse('<html><head><meta property="og:title" content="کبوتر &amp; دوستان"><meta property="og:description" content="پیام‌رسان"><meta property="og:image" content="/a.png"></head></html>', 'https://example.org/page');
+  ok(parsed.title === 'کبوتر & دوستان' && parsed.image === 'https://example.org/a.png' && parsed.site === 'example.org', 'Open Graph parsing');
 
   console.log('calls');
   const wa = await client(A.token), wb = await client(B.token);

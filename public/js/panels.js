@@ -239,7 +239,7 @@ App.joinDialog = async (ref) => {
       title: chat.type === 'channel' ? 'کانال' : 'گروه',
       body: h('div', { class: 'info-top' },
         avatarEl({ name: chat.title, avatar: chat.avatar, seed: chat.id * 7 + 3 }, 's120'),
-        h('div', { class: 't', dir: 'auto' }, chat.title),
+        h('div', { class: 't', dir: 'auto' }, chat.title, chat.verified ? R.verified() : null),
         h('div', { class: 'st' }, (chat.username ? '@' + chat.username + ' · ' : '') + membersText(chat)),
         chat.description ? h('p', { dir: 'auto', class: 'st' }, chat.description) : null,
         h('div', { class: 'join-wrap' }, btn)),
@@ -519,7 +519,8 @@ App.openInfo = async (chatId, refresh) => {
   if (c.description) rows.append(UI.row('info', c.description, c.type === 'private' ? 'بیوگرافی' : 'توضیحات', () => copyText(c.description), 'multi'));
   if (c.can_manage && c.invite_token) rows.append(UI.row('link', inviteUrl(c.invite_token), 'لینک دعوت', () => copyText(inviteUrl(c.invite_token), 'لینک کپی شد')));
   if (!isSaved(c)) rows.append(UI.switchRow('bell', 'اعلان‌ها', c.muted ? 'خاموش' : 'روشن', !c.muted, (v) => App.chatSetting(c, { muted: !v })));
-  if (priv) {
+  if (S.me.is_admin && !isSaved(c)) rows.append(UI.row('shield', c.verified ? 'برداشتن تیک آبی' : 'دادن تیک آبی', 'فقط ادمین‌های کبوتر', () => App.setVerified(c, !c.verified)));
+  if (priv && !c.peer.system) {
     rows.append(UI.row('personAdd', c.peer.is_contact ? 'ویرایش مخاطب' : 'افزودن به مخاطبین', null, () => App.contactDialog(c.peer)));
     rows.append(UI.row('block', c.peer.blocked ? 'رفع مسدودی' : 'مسدود کردن کاربر', null, () => App.toggleBlock(c.peer), c.peer.blocked ? '' : 'danger'));
   }
@@ -531,7 +532,7 @@ App.openInfo = async (chatId, refresh) => {
 
   const tabs = [];
   if (details.members.length) tabs.push(['members', c.type === 'channel' ? 'مشترک‌ها' : 'اعضا']);
-  if (priv) tabs.push(['stories', 'استوری‌ها']);
+  if (priv && !c.peer.system) tabs.push(['stories', 'استوری‌ها']);
   tabs.push(['media', 'رسانه'], ['file', 'فایل‌ها'], ['link', 'لینک‌ها'], ['music', 'موسیقی'], ['voice', 'صوت'], ['gif', 'GIF']);
   const content = h('div', { class: 'info-content' });
   const showTab = async (key) => {
@@ -578,7 +579,7 @@ App.openInfo = async (chatId, refresh) => {
 
   // Web K: full-width square photo with the name on top of it; otherwise a round avatar
   let top;
-  const name = h('div', { class: 't', dir: 'auto' }, chatTitle(c));
+  const name = h('div', { class: 't', dir: 'auto' }, chatTitle(c), c.verified ? R.verified() : null);
   const status = st.text ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, st.text) : null;
   if (c.avatar && !isSaved(c)) {
     top = h('div', { class: 'info-photo', onclick: () => {
@@ -662,4 +663,78 @@ App.editChatDialog = (c) => {
       } catch (e) { toast(e.message); }
     } },
   });
+};
+
+/* ---------- blue ticks (admins listed in ADMIN_USERNAMES) ---------- */
+App.setVerified = async (c, on) => {
+  try {
+    const body = c.type === 'private' ? { user_id: c.peer.id, verified: on } : { chat_id: c.id, verified: on };
+    await api('POST', '/api/admin/verify', body);
+    toast(on ? 'تیک آبی داده شد' : 'تیک آبی برداشته شد');
+  } catch (e) { toast(e.message); }
+};
+
+/* ---------- scheduled messages ---------- */
+App.loadScheduledCount = async () => {
+  const id = S.active;
+  const c = S.chats.get(id);
+  if (!c || !c.can_post) { App.scheduledCount = 0; return; }
+  try {
+    const { scheduled } = await api('GET', `/api/chats/${id}/scheduled`);
+    if (S.active !== id) return;
+    App.scheduledCount = scheduled.length;
+    App.scheduledList = scheduled;
+    el.schedBtn?.remove();
+    el.schedBtn = null;
+    if (scheduled.length && el.row && el.attachBtn) {
+      el.schedBtn = ibtn('clock', 'پیام‌های زمان‌بندی‌شده', () => App.scheduledDialog(c), 'sched-btn');
+      el.row.insertBefore(el.schedBtn, el.attachBtn);
+    }
+  } catch {}
+};
+const pad2 = (n) => String(n).padStart(2, '0');
+App.scheduleDialog = () => {
+  const c = S.chats.get(S.active);
+  if (!c || !el.input?.value.trim()) return;
+  const d = new Date(Date.now() + 3600e3);
+  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+  const val = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const when = UI.field('زمان ارسال', { type: 'datetime-local', value: val, dir: 'ltr' });
+  const quick = h('div', { class: 'chips-select' }, [['۱ ساعت بعد', 3600e3], ['امشب ساعت ۲۱', 'tonight'], ['فردا صبح ۹', 'tomorrow']].map(([label, v]) =>
+    h('button', { type: 'button', class: 'chip-sel', onclick: () => {
+      const t = new Date();
+      if (v === 'tonight') { t.setHours(21, 0, 0, 0); if (t < Date.now()) t.setDate(t.getDate() + 1); }
+      else if (v === 'tomorrow') { t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); }
+      else t.setTime(Date.now() + v);
+      when.input.value = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}T${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+    } }, label)));
+  const ok = h('button', { class: 'btn flat' }, 'زمان‌بندی');
+  const m = UI.modal({ title: isSaved(c) ? 'یادآوری' : 'زمان‌بندی پیام', body: [quick, when], foot: [h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), ok] });
+  ok.addEventListener('click', async () => {
+    const at = new Date(when.input.value).getTime();
+    if (!Number.isFinite(at) || at < Date.now() + 10000) return toast('یک زمان در آینده انتخاب کنید');
+    try {
+      await api('POST', `/api/chats/${c.id}/scheduled`, { text: el.input.value.trim(), send_at: at, reply_to: S.reply?.id || null, ...App.topicFields(c) });
+      el.input.value = '';
+      delete S.drafts[App.draftKey()];
+      save('drafts', S.drafts);
+      S.reply = null;
+      App.autoGrow(); App.renderComposerBar();
+      m.close();
+      toast(`پیام برای ${new Date(at).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' })} زمان‌بندی شد`);
+      App.loadScheduledCount();
+    } catch (e) { toast(e.message); }
+  });
+};
+App.scheduledDialog = async (c) => {
+  let list = [];
+  try { list = (await api('GET', `/api/chats/${c.id}/scheduled`)).scheduled; } catch (e) { return toast(e.message); }
+  const box = h('div', { class: 'picker-list' });
+  const paint = () => box.replaceChildren(...(list.length ? list.map((s) => h('div', { class: 'pick sched' },
+    h('span', { class: 'avatar s42 g5' }, icon('clock')),
+    h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, R.stripMarkup(s.text).slice(0, 80)), h('div', { class: 's' }, new Date(s.send_at).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }))),
+    ibtn('send', 'همین حالا بفرست', async () => { await api('POST', `/api/scheduled/${s.id}/send`).catch((e) => toast(e.message)); list = list.filter((x) => x.id !== s.id); paint(); App.loadScheduledCount(); }),
+    ibtn('trash', 'حذف', async () => { await api('DELETE', `/api/scheduled/${s.id}`).catch((e) => toast(e.message)); list = list.filter((x) => x.id !== s.id); paint(); App.loadScheduledCount(); }))) : [h('div', { class: 'info-empty' }, 'پیام زمان‌بندی‌شده‌ای نیست')]));
+  paint();
+  UI.modal({ title: 'پیام‌های زمان‌بندی‌شده', body: box, wide: true });
 };

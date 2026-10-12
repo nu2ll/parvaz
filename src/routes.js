@@ -9,6 +9,8 @@ const stickers = require('./stickers');
 const gifs = require('./gifs');
 const stories = require('./stories');
 const calls = require('./calls');
+const official = require('./official');
+const scheduled = require('./scheduled');
 const { readJson, rateLimit, HttpError } = require('./http-util');
 
 const routes = [];
@@ -153,6 +155,18 @@ route('PATCH', '/api/stories/:id', async (ctx) => stories.pin(ctx.user, ctx.para
 route('POST', '/api/stories/:id/view', (ctx) => stories.view(ctx.user, ctx.params.id));
 route('POST', '/api/stories/:id/react', async (ctx) => stories.react(ctx.user, ctx.params.id, (await body(ctx)).emoji ?? null));
 route('GET', '/api/stories/:id/views', (ctx) => stories.views(ctx.user, ctx.params.id));
+
+// ---- admin (ADMIN_USERNAMES) ----
+route('POST', '/api/admin/verify', async (ctx) => official.verify(ctx.user, await body(ctx)));
+
+// ---- scheduled messages ----
+route('GET', '/api/chats/:id/scheduled', (ctx) => scheduled.list(ctx.user, ctx.params.id));
+route('POST', '/api/chats/:id/scheduled', async (ctx) => {
+  rateLimit(`schedule:${ctx.user.id}`, 30, 60_000);
+  return scheduled.create(ctx.user, ctx.params.id, await body(ctx));
+}, { status: 201 });
+route('DELETE', '/api/scheduled/:id', (ctx) => scheduled.remove(ctx.user, ctx.params.id));
+route('POST', '/api/scheduled/:id/send', (ctx) => scheduled.sendNow(ctx.user, ctx.params.id));
 
 // ---- calls ----
 route('GET', '/api/calls', (ctx) => calls.history(ctx.user));

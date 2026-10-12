@@ -29,7 +29,7 @@ App.openSettings = (page) => {
         UI.row('devices', 'دستگاه‌ها', null, () => App.settingsPage('sessions')),
         UI.row('globe', 'زبان', 'فارسی', () => App.settingsPage('language')),
       ]),
-      h('div', { class: 'settings-foot' }, `کبوتر وب ${fa(S.config.version || '3.0.0')} — بدون هیچ وابستگی`));
+      h('div', { class: 'settings-foot' }, `کبوتر وب ${App.version()}، بدون هیچ وابستگی`));
   };
   paint();
   const tab = App.side.push({

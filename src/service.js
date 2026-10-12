@@ -64,7 +64,9 @@ function publicUser(u, viewerId) {
     username: u.username,
     display_name: u.display_name,
     bio: allows(u, 'bio', viewerId) ? u.bio || '' : '',
-    avatar: allows(u, 'photo', viewerId) ? fileUrl(u.avatar_file) : null,
+    avatar: allows(u, 'photo', viewerId) ? fileUrl(u.avatar_file) || (u.is_system ? '/icon.svg' : null) : null,
+    verified: !!u.verified,
+    system: !!u.is_system,
     online: seen ? hub.isOnline(u.id) : false,
     last_seen: seen ? u.last_seen ?? null : null,
     last_seen_hidden: !seen,
@@ -77,7 +79,8 @@ function publicUser(u, viewerId) {
 
 function selfUser(u) {
   const privacy = privacyOf(u);
-  return { ...publicUser(u, u.id), show_last_seen: privacy.last_seen !== 'nobody', privacy, twofa: !!repo.twofa(u.id)?.twofa_hash };
+  return { ...publicUser(u, u.id), show_last_seen: privacy.last_seen !== 'nobody', privacy, twofa: !!repo.twofa(u.id)?.twofa_hash,
+    is_admin: config.adminUsernames.includes(String(u.username).toLowerCase()) };
 }
 
 function reactionsView(messageId, viewerId) {
@@ -142,8 +145,11 @@ function formatMessage(r, viewerId) {
     out.media = null;
   }
   if (r.kind === 'call') { out.call = parseMeta(r.meta); out.media = null; }
+  if (r.kind !== 'text' && r.meta && parseMeta(r.meta).silent) out.silent = true;
   if (r.kind === 'text' && r.meta) {
     const m = parseMeta(r.meta);
+    if (m.silent) out.silent = true;
+    if (m.preview && m.preview.url) out.preview = { ...m.preview, image: m.preview.image_file ? fileUrl(m.preview.image_file) : null, image_file: undefined };
     if (m.story_id) {
       const st = repo.storyById(m.story_id);
       out.story = st
@@ -192,7 +198,8 @@ function previewChat(chat) {
     title: chat.title,
     username: chat.username,
     description: chat.description,
-    avatar: fileUrl(chat.avatar_file),
+    avatar: fileUrl(chat.avatar_file) || (chat.is_official ? '/icon.svg' : null),
+    verified: !!chat.verified,
     member_count: repo.memberCount(chat.id),
   };
 }
@@ -201,7 +208,7 @@ function buildChat(chat, userId) {
   const me = repo.membership(chat.id, userId);
   if (!me) return null;
   let title = chat.title;
-  let avatar = fileUrl(chat.avatar_file);
+  let avatar = fileUrl(chat.avatar_file) || (chat.is_official ? '/icon.svg' : null);
   let peer = null;
   if (chat.type === 'private') {
     const p = repo.userById(repo.otherMember(chat.id, userId) ?? userId); // chat with yourself = Saved Messages
@@ -223,7 +230,9 @@ function buildChat(chat, userId) {
     peer,
     member_count: repo.memberCount(chat.id),
     role: me.role,
-    can_post: canPost(chat, me),
+    can_post: canPost(chat, me) && !(peer && peer.system),
+    verified: chat.type === 'private' ? !!peer.verified : !!chat.verified,
+    official: !!chat.is_official || !!(peer && peer.system),
     can_manage: chat.type !== 'private' && manager,
     muted: !!me.muted,
     archived: !!me.archived,
@@ -308,6 +317,7 @@ async function register(body, meta) {
   // everyone starts with Saved Messages and the built-in sticker packs
   openPrivate({ id }, username);
   for (const pack of repo.builtinPacks()) repo.installPack(id, pack.id);
+  try { require('./official').onRegister(id); } catch (e) { console.error('[official]', e); }
   return { token: auth.createSession(id, meta), user: selfUser(repo.userById(id)) };
 }
 
@@ -327,7 +337,9 @@ async function login(body, meta) {
     pending2fa.set(loginToken, { userId: row.id, exp: Date.now() + 5 * 60_000, tries: 0 });
     return { twofa_required: true, login_token: loginToken, hint: tf.twofa_hint || '' };
   }
-  return { token: auth.createSession(row.id, meta), user: selfUser(repo.userById(row.id)) };
+  const token = auth.createSession(row.id, meta);
+  try { require('./official').onLogin(row.id, meta); } catch (e) { console.error('[official]', e); }
+  return { token, user: selfUser(repo.userById(row.id)) };
 }
 
 const pending2fa = new Map();
@@ -341,7 +353,9 @@ async function login2fa(body, meta) {
   const password = typeof body.password === 'string' ? body.password : '';
   if (!tf?.twofa_hash || !(await auth.verifyPassword(password, tf.twofa_hash))) throw err(401, 'invalid_2fa', 'Wrong password');
   pending2fa.delete(key);
-  return { token: auth.createSession(p.userId, meta), user: selfUser(repo.userById(p.userId)) };
+  const token = auth.createSession(p.userId, meta);
+  try { require('./official').onLogin(p.userId, meta); } catch (e) { console.error('[official]', e); }
+  return { token, user: selfUser(repo.userById(p.userId)) };
 }
 
 function twofaStatus(user) {
@@ -848,6 +862,7 @@ function checkPrivatePeer(chat, userId) {
   if (chat.type !== 'private') return null;
   const peerId = repo.otherMember(chat.id, userId);
   if (!peerId) return null; // Saved Messages
+  if (repo.userById(peerId)?.is_system) throw err(403, 'forbidden', 'You cannot reply to service notifications');
   if (repo.isBlocked(userId, peerId)) throw err(403, 'you_blocked', 'Unblock this user to send messages');
   if (repo.isBlocked(peerId, userId)) throw err(403, 'blocked', 'This user restricted who can message them');
   return peerId;
@@ -901,11 +916,19 @@ function sendMessage(user, body) {
     Object.assign(msg, { kind, file_id: f.id, text: v.caption(body.text), meta, grouped_id: grouped });
   } else {
     Object.assign(msg, { kind: 'text', text: v.messageText(body.text) });
+    const meta = {};
     if (body.story_id != null) {
       const st = repo.storyById(v.id(body.story_id, 'story_id'));
       if (!st || st.user_id !== peerId || !storyVisible(st, user.id)) throw err(404, 'story_not_found', 'Story not found');
-      msg.meta = JSON.stringify({ story_id: st.id });
+      meta.story_id = st.id;
     }
+    if (body.silent) meta.silent = true;
+    if (body.no_preview) meta.no_preview = true;
+    if (Object.keys(meta).length) msg.meta = JSON.stringify(meta);
+  }
+  if (body.silent && msg.kind !== 'text') {
+    const m = parseMeta(msg.meta);
+    msg.meta = JSON.stringify({ ...m, silent: true });
   }
   const id = repo.tx(() => {
     const id = repo.insertMessage(msg);
@@ -914,6 +937,7 @@ function sendMessage(user, body) {
     return id;
   });
   emitMessage('message', id);
+  if (msg.kind === 'text' && !body.no_preview) require('./preview').attach(id, msg.text, user.id);
   return formatMessage(repo.messageById(id), user.id);
 }
 
@@ -975,6 +999,7 @@ function editMessage(user, messageIdRaw, textRaw) {
   const text = msg.kind === 'text' ? v.messageText(textRaw) : v.caption(textRaw);
   repo.editMessage(id, text, Date.now());
   emitMessage('message_updated', id);
+  if (msg.kind === 'text') require('./preview').attach(id, text, user.id, true);
   return formatMessage(repo.messageById(id), user.id);
 }
 
@@ -1061,7 +1086,7 @@ function typing(user, chatIdRaw, actionRaw, topicRaw) {
   const chatId = v.id(chatIdRaw, 'chat_id');
   const { chat, membership } = requireMember(chatId, user.id);
   if (!canPost(chat, membership) || chat.type === 'channel') return;
-  if (chat.type === 'private' && repo.otherMember(chatId, user.id) && repo.isBlocked(repo.otherMember(chatId, user.id), user.id)) return;
+  try { checkPrivatePeer(chat, user.id); } catch { return; }
   const action = ACTIONS.has(actionRaw) ? actionRaw : 'typing';
   const topic_id = chat.is_forum ? Number(topicRaw) || 0 : null;
   emitToChat(chatId, { type: 'typing', chat_id: chatId, topic_id, action, user: { id: user.id, display_name: user.display_name } }, user.id);
@@ -1088,7 +1113,7 @@ function chatMedia(user, chatIdRaw, typeRaw, beforeRaw) {
 
 module.exports = {
   REACTIONS, publicUser, selfUser, formatMessage, broadcastPresence, privacyOf, allows, storyVisible, emitMessage, pushChat, emitToChat,
-  requireMember, isManager, insertService, checkPrivatePeer, forumUnread,
+  requireMember, isManager, insertService, checkPrivatePeer, forumUnread, openPrivate, buildChat,
   login2fa, twofaStatus, setTwofa, setPrivacy,
   register, login, updateProfile, changePassword, listSessions, getSettings, updateSettings, terminateSession, terminateOtherSessions,
   search, resolve,

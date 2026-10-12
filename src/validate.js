@@ -6,7 +6,7 @@ const bad = (msg) => new HttpError(400, 'validation', msg);
 const CONTROL = /[-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/;
 const PUBLIC_RE = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/;
-const RESERVED = new Set(['admin', 'administrator', 'support', 'kabootar', 'system', 'root', 'join', 'files', 'api']);
+const RESERVED = new Set(['admin', 'administrator', 'support', 'kabootar', 'system', 'root', 'join', 'files', 'api', 'kabootar_service', 'kabootar_official', 'official', 'telegram', 'notifications']);
 
 function username(v) {
   if (typeof v !== 'string' || !USERNAME_RE.test(v.trim().replace(/^@/, ''))) {
