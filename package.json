@@ -1,13 +1,15 @@
 {
   "name": "kabootar",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "A tiny Telegram-like messaging server (REST + WebSocket + SQLite) with zero dependencies.",
+  "description": "Telegram-style messenger: server + web client, zero dependencies.",
   "main": "server.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
     "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
-    "test": "node --disable-warning=ExperimentalWarning test/smoke.js"
+    "test": "node --disable-warning=ExperimentalWarning test/smoke.js && node --disable-warning=ExperimentalWarning test/ui.js",
+    "test:api": "node --disable-warning=ExperimentalWarning test/smoke.js",
+    "test:ui": "node --disable-warning=ExperimentalWarning test/ui.js"
   },
   "engines": {
     "node": ">=22.13"

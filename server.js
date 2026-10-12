@@ -6,6 +6,7 @@ const config = require('./src/config');
 const auth = require('./src/auth');
 const routes = require('./src/routes');
 const realtime = require('./src/realtime');
+const files = require('./src/files');
 const { HttpError, sendJson, clientIp } = require('./src/http-util');
 
 const MIME = {
@@ -21,12 +22,12 @@ const MIME = {
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy':
-    "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self'; script-src 'self'; " +
+    "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; " +
     "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
 };
 
 function serveStatic(req, res, pathname) {
@@ -66,11 +67,13 @@ function createServer() {
         const m = routes.match(req.method, url.pathname);
         if (!m) throw new HttpError(404, 'not_found', 'Endpoint not found');
         const ctx = { req, res, url, params: m.params, ip: clientIp(req) };
-        if (!m.route.public) ctx.user = auth.authenticate(req);
+        if (!m.route.public) ctx.user = auth.authenticate(req, ctx.ip);
         const result = await m.route.handler(ctx);
         return sendJson(res, m.route.status || 200, result ?? { ok: true });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method_not_allowed', 'Method not allowed');
+      const fm = /^\/files\/([^/]+)$/.exec(url.pathname);
+      if (fm) return files.serve(req, res, fm[1]);
       serveStatic(req, res, url.pathname);
     } catch (err) {
       sendError(res, err);
@@ -87,7 +90,7 @@ function createServer() {
     }
   });
 
-  server.requestTimeout = 30_000;
+  server.requestTimeout = 15 * 60_000; // big uploads on slow mobile links
   server.headersTimeout = 15_000;
   const stopHeartbeat = realtime.startHeartbeat();
   server.on('close', stopHeartbeat);

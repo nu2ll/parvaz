@@ -1,5 +1,5 @@
 'use strict';
-// End-to-end smoke test: boots the server on a random port with an in-memory DB.
+// End-to-end test: boots the server on a random port with an in-memory DB and drives it like real clients.
 process.env.DB_PATH = ':memory:';
 const net = require('node:net');
 const { start } = require('../server');
@@ -11,13 +11,16 @@ const ok = (cond, label) => {
   console.log('  ✓', label);
 };
 
-async function call(method, path, body, token) {
-  const res = await fetch(base + path, {
-    method,
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return { status: res.status, headers: res.headers, data: await res.json().catch(() => null) };
+async function call(method, path, body, token, raw) {
+  const headers = { ...(token ? { Authorization: 'Bearer ' + token } : {}) };
+  let payload;
+  if (raw) { payload = raw.data; headers['Content-Type'] = raw.type; }
+  else if (body != null) { payload = JSON.stringify(body); headers['Content-Type'] = 'application/json'; }
+  const res = await fetch(base + path, { method, headers, body: payload });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { data = text; }
+  return { status: res.status, headers: res.headers, data };
 }
 
 function client(token) {
@@ -27,24 +30,27 @@ function client(token) {
     const waiters = [];
     ws.onmessage = (e) => {
       const ev = JSON.parse(e.data);
-      events.push(ev);
-      for (const w of [...waiters]) if (w.pred(ev)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(ev); }
+      const w = waiters.find((w) => w.pred(ev));
+      if (w) { waiters.splice(waiters.indexOf(w), 1); w.resolve(ev); } else events.push(ev);
     };
     const api = {
       ws, events,
       send: (o) => ws.send(JSON.stringify(o)),
       waitFor(pred, ms = 2000) {
-        const found = events.find(pred);
-        if (found) { events.splice(events.indexOf(found), 1); return Promise.resolve(found); }
+        const i = events.findIndex(pred);
+        if (i >= 0) return Promise.resolve(events.splice(i, 1)[0]);
         return new Promise((res, rej) => {
-          const w = { pred, resolve: (ev) => { clearTimeout(t); events.splice(events.indexOf(ev), 1); res(ev); } };
           const t = setTimeout(() => rej(new Error('timeout waiting for event')), ms);
-          waiters.push(w);
+          waiters.push({ pred, resolve: (ev) => { clearTimeout(t); res(ev); } });
         });
       },
+      drain() { events.length = 0; },
       closed: new Promise((res) => (ws.onclose = (e) => res(e.code))),
     };
-    ws.onopen = () => { api.send({ type: 'auth', token }); api.waitFor((e) => e.type === 'ready' || e.type === 'error').then((e) => e.type === 'ready' ? resolve(api) : reject(new Error(e.message))); };
+    ws.onopen = () => {
+      api.send({ type: 'auth', token });
+      api.waitFor((e) => e.type === 'ready' || e.type === 'error').then((e) => (e.type === 'ready' ? resolve(api) : reject(new Error(e.message))));
+    };
     ws.onerror = () => {};
   });
 }
@@ -55,92 +61,162 @@ function client(token) {
   base = `http://127.0.0.1:${port}`;
   wsBase = `ws://127.0.0.1:${port}/ws`;
 
-  console.log('auth');
-  const ali = await call('POST', '/api/auth/register', { username: 'ali', display_name: 'علی', password: 'supersecret1' });
-  ok(ali.status === 400, 'rejects too-short username (ali)');
+  console.log('accounts');
+  ok((await call('POST', '/api/auth/register', { username: 'ali', password: 'supersecret1' })).status === 400, 'too-short username rejected');
   const a = await call('POST', '/api/auth/register', { username: 'ali_r', display_name: 'علی', password: 'supersecret1' });
   ok(a.status === 201 && a.data.token, 'register ali_r');
   const s = await call('POST', '/api/auth/register', { username: 'sara', display_name: 'سارا', password: 'supersecret2' });
-  ok(s.status === 201, 'register sara');
-  ok((await call('POST', '/api/auth/register', { username: 'SARA', password: 'whatever123' })).status === 409, 'duplicate username is case-insensitive');
-  ok((await call('POST', '/api/auth/register', { username: 'reza', password: 'short' })).status === 400, 'weak password rejected');
-  ok((await call('POST', '/api/auth/login', { username: 'sara', password: 'nope-nope' })).status === 401, 'wrong password rejected');
-  ok((await call('POST', '/api/auth/login', { username: 'ghost', password: 'nope-nope' })).status === 401, 'unknown user rejected');
-  const sl = await call('POST', '/api/auth/login', { username: 'sara', password: 'supersecret2' });
-  ok(sl.status === 200 && sl.data.token, 'login sara');
   const r = await call('POST', '/api/auth/register', { username: 'reza', display_name: 'رضا', password: 'supersecret3' });
-  const A = a.data.token, S = sl.data.token, R = r.data.token;
-  ok((await call('GET', '/api/me')).status === 401, '/api/me needs a token');
-  ok((await call('GET', '/api/me', null, A)).data.user.username === 'ali_r', '/api/me works');
+  ok((await call('POST', '/api/auth/register', { username: 'SARA', password: 'whatever123' })).status === 409, 'usernames are case-insensitive');
+  ok((await call('POST', '/api/auth/register', { username: 'admin', password: 'whatever123' })).status === 409, 'reserved username blocked');
+  ok((await call('POST', '/api/auth/login', { username: 'sara', password: 'nope-nope' })).status === 401, 'wrong password rejected');
+  const sl = await call('POST', '/api/auth/login', { username: 'sara', password: 'supersecret2' });
+  ok(sl.status === 200, 'login works');
+  const A = a.data.token, S = sl.data.token, R = r.data.token, S0 = s.data.token;
+  const aliId = a.data.user.id, saraId = s.data.user.id, rezaId = r.data.user.id;
+  const saved = (await call('GET', '/api/chats', null, A)).data.chats;
+  ok(saved.length === 1 && saved[0].peer.id === aliId, 'new account starts with Saved Messages');
 
-  console.log('search + private chat');
-  const found = await call('GET', '/api/users/search?q=sa', null, A);
-  ok(found.data.users.length === 1 && found.data.users[0].username === 'sara', 'search finds sara');
-  ok((await call('GET', '/api/users/search?q=%25', null, A)).data.users.length === 0, 'LIKE wildcards are escaped');
+  console.log('profile, privacy, sessions');
+  const pr = await call('PATCH', '/api/me', { bio: 'سلام، من علی‌ام', display_name: 'علی رضایی' }, A);
+  ok(pr.data.user.bio === 'سلام، من علی‌ام' && pr.data.user.display_name === 'علی رضایی', 'update name + bio');
+  ok((await call('PATCH', '/api/me', { username: 'sara' }, A)).status === 409, 'cannot steal a username');
+  const sess = await call('GET', '/api/sessions', null, S);
+  ok(sess.data.sessions.length === 2 && sess.data.sessions.filter((x) => x.current).length === 1, 'two sessions listed, one current');
+  const other = sess.data.sessions.find((x) => !x.current);
+  ok((await call('DELETE', `/api/sessions/${other.id}`, null, S)).status === 200, 'terminate other session');
+  ok((await call('GET', '/api/me', null, S0)).status === 401, 'terminated session is dead');
+
+  console.log('uploads');
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082', 'hex');
+  const up = await call('POST', '/api/files?name=' + encodeURIComponent('عکس.png'), undefined, A, { data: png, type: 'image/png' });
+  ok(up.status === 201 && /^[a-f0-9]{32}$/.test(up.data.file.id), 'upload a photo');
+  const fileRes = await fetch(base + up.data.file.url);
+  ok(fileRes.status === 200 && fileRes.headers.get('content-type') === 'image/png' && fileRes.headers.get('x-content-type-options') === 'nosniff', 'photo served inline, nosniff');
+  const ranged = await fetch(base + up.data.file.url, { headers: { Range: 'bytes=0-7' } });
+  ok(ranged.status === 206 && (await ranged.arrayBuffer()).byteLength === 8, 'range requests work (video/voice seeking)');
+  const html = await call('POST', '/api/files?name=x.html', undefined, A, { data: Buffer.from('<script>alert(1)</script>'), type: 'text/html' });
+  const htmlRes = await fetch(base + html.data.file.url);
+  ok(htmlRes.headers.get('content-type') === 'application/octet-stream' && /attachment/.test(htmlRes.headers.get('content-disposition')), 'html upload forced to download (no XSS)');
+  ok((await call('PATCH', '/api/me', { avatar: html.data.file.id }, A)).status === 400, 'non-image avatar rejected');
+  ok((await call('PATCH', '/api/me', { avatar: up.data.file.id }, A)).data.user.avatar === up.data.file.url, 'set avatar');
+  ok((await call('POST', '/api/files', undefined, null, { data: png, type: 'image/png' })).status === 401, 'upload needs login');
+
+  console.log('private chat + realtime');
+  const found = await call('GET', '/api/search?q=sa', null, A);
+  ok(found.data.users.length === 1 && found.data.users[0].username === 'sara', 'global search finds sara');
   const pc = await call('POST', '/api/chats/private', { username: '@sara' }, A);
-  ok(pc.status === 200 && pc.data.chat.type === 'private' && pc.data.chat.title === 'سارا', 'open private chat');
   const chatId = pc.data.chat.id;
-  ok((await call('POST', '/api/chats/private', { username: 'ali_r' }, S)).data.chat.id === chatId, 'same private chat from both sides');
+  ok(pc.data.chat.type === 'private' && pc.data.chat.title === 'سارا', 'open private chat');
   ok((await call('GET', `/api/chats/${chatId}/messages`, null, R)).status === 404, 'outsider cannot read chat');
 
-  console.log('realtime');
   const wa = await client(A);
   const ws = await client(S);
-  ok(true, 'both clients authenticated over WebSocket');
-  const pres = await wa.waitFor((e) => e.type === 'presence' && e.online);
-  ok(pres.user_id === s.data.user.id, 'ali sees sara come online');
+  ok((await wa.waitFor((e) => e.type === 'presence' && e.online)).user_id === saraId, 'presence: sara online');
 
-  wa.send({ type: 'send', chat_id: chatId, text: 'سلام سارا! 👋' });
+  wa.send({ type: 'send', chat_id: chatId, text: 'سلام سارا! **بولد** و @sara 👋' });
   const got = await ws.waitFor((e) => e.type === 'message');
-  ok(got.message.text === 'سلام سارا! 👋' && got.message.sender.username === 'ali_r', 'sara receives message instantly');
-  ok((await wa.waitFor((e) => e.type === 'message')).message.id === got.message.id, 'sender devices get it too');
-
-  ws.send({ type: 'typing', chat_id: chatId });
-  ok((await wa.waitFor((e) => e.type === 'typing')).user.id === s.data.user.id, 'typing indicator delivered');
-
-  const list = await call('GET', '/api/chats', null, S);
-  ok(list.data.chats[0].unread === 1, 'sara has 1 unread');
+  ok(got.message.text.includes('سلام سارا') && got.message.sender.avatar === up.data.file.url, 'message arrives instantly with sender avatar');
+  ws.send({ type: 'typing', chat_id: chatId, action: 'recording' });
+  ok((await wa.waitFor((e) => e.type === 'typing')).action === 'recording', 'typing/recording indicator');
   ws.send({ type: 'read', chat_id: chatId, message_id: got.message.id });
-  ok((await wa.waitFor((e) => e.type === 'read')).message_id === got.message.id, 'read receipt delivered to ali');
-  ok((await call('GET', '/api/chats', null, S)).data.chats[0].unread === 0, 'unread cleared');
+  ok((await wa.waitFor((e) => e.type === 'read')).message_id === got.message.id, 'read receipt ✓✓');
 
-  ws.send({ type: 'send', chat_id: chatId, text: 'سلام!', reply_to: got.message.id });
-  const reply = await wa.waitFor((e) => e.type === 'message' && e.message.reply_to);
-  ok(reply.message.reply.text === 'سلام سارا! 👋', 'reply carries quoted message');
+  ws.send({ type: 'react', message_id: got.message.id, emoji: '❤️', ref: 1 });
+  const re1 = await wa.waitFor((e) => e.type === 'message_updated');
+  ok(re1.message.reactions[0].emoji === '❤️' && re1.message.reactions[0].count === 1 && !re1.message.reactions[0].mine, 'reaction delivered');
+  ok((await ws.waitFor((e) => e.type === 'ack' && e.ref === 1)).result.reactions[0].mine, 'ack with result');
+  ws.send({ type: 'react', message_id: got.message.id, emoji: '❤️' });
+  ok((await wa.waitFor((e) => e.type === 'message_updated')).message.reactions.length === 0, 'same reaction again removes it');
+  ws.send({ type: 'react', message_id: got.message.id, emoji: '💩', ref: 2 });
+  ok((await ws.waitFor((e) => e.type === 'error' && e.ref === 2)).code === 'validation', 'unknown reaction rejected');
 
-  wa.send({ type: 'edit', message_id: got.message.id, text: 'سلام سارا جان' });
-  const ed = await ws.waitFor((e) => e.type === 'message_updated');
-  ok(ed.message.text === 'سلام سارا جان' && ed.message.edited_at, 'edit propagates');
-  ws.send({ type: 'edit', message_id: got.message.id, text: 'hacked', ref: 7 });
-  const er = await ws.waitFor((e) => e.type === 'error');
-  ok(er.code === 'forbidden' && er.ref === 7, "can't edit someone else's message");
+  const photo = await call('POST', `/api/chats/${chatId}/messages`, { file_id: up.data.file.id, text: 'کپشن', reply_to: got.message.id }, A);
+  ok(photo.data.message.kind === 'photo' && photo.data.message.media.mime === 'image/png' && photo.data.message.reply.id === got.message.id, 'send photo with caption + reply');
+  ok((await call('POST', `/api/chats/${chatId}/messages`, { file_id: up.data.file.id }, S)).status === 404, "can't send someone else's file");
+  const voiceUp = await call('POST', '/api/files?name=voice.webm', undefined, S, { data: Buffer.alloc(2000, 1), type: 'audio/webm;codecs=opus' });
+  const voice = await call('POST', `/api/chats/${chatId}/messages`, { file_id: voiceUp.data.file.id, voice: true, meta: { duration: 3.4, evil: 1 } }, S);
+  ok(voice.data.message.kind === 'voice' && voice.data.message.media.duration === 3.4 && voice.data.message.media.evil === undefined, 'voice message with sanitized duration');
 
-  ws.send({ type: 'send', chat_id: chatId, text: 'x'.repeat(5000), ref: 8 });
-  ok((await ws.waitFor((e) => e.type === 'error' && e.ref === 8)).code === 'validation', 'overlong message rejected');
-  wa.send({ type: 'send', chat_id: 9999, text: 'hi', ref: 9 });
-  ok((await wa.waitFor((e) => e.type === 'error' && e.ref === 9)).code === 'not_found', 'cannot post to unknown chat');
+  ok((await call('PATCH', `/api/messages/${got.message.id}`, { text: 'ویرایش شد' }, A)).data.message.edited_at, 'edit message');
+  ok((await call('PATCH', `/api/messages/${got.message.id}`, { text: 'hack' }, S)).status === 403, "can't edit others' messages");
+  ok((await call('POST', `/api/chats/${chatId}/pin`, { message_id: got.message.id }, S)).status === 200, 'pin message (private: anyone)');
+  const afterPin = (await call('GET', '/api/chats', null, A)).data.chats.find((c) => c.id === chatId);
+  ok(afterPin.pinned_message.id === got.message.id, 'pinned message on chat');
+  ok(afterPin.last_message.kind === 'service' && afterPin.last_message.service.action === 'pinned', 'pin service message');
 
-  wa.send({ type: 'delete', message_id: got.message.id });
-  const del = await ws.waitFor((e) => e.type === 'message_updated' && e.message.deleted);
-  ok(del.message.text === '', 'delete wipes text for everyone');
+  const srch = await call('GET', `/api/chats/${chatId}/search?q=${encodeURIComponent('ویرایش')}`, null, S);
+  ok(srch.data.messages.length === 1, 'search inside chat');
+  const media = await call('GET', `/api/chats/${chatId}/media?type=media`, null, S);
+  ok(media.data.messages.length === 1 && media.data.messages[0].kind === 'photo', 'shared media list');
+  const around = await call('GET', `/api/chats/${chatId}/messages?around=${photo.data.message.id}&limit=2`, null, A);
+  ok(around.data.messages.some((m) => m.id === photo.data.message.id), 'jump-to-message (around)');
 
-  const rest = await call('POST', `/api/chats/${chatId}/messages`, { text: 'via REST' }, S);
-  ok(rest.status === 201 && (await wa.waitFor((e) => e.type === 'message')).message.text === 'via REST', 'REST send is pushed over WS');
-
-  const hist = await call('GET', `/api/chats/${chatId}/messages?limit=2`, null, A);
-  ok(hist.data.messages.length === 2 && hist.data.has_more === true, 'history pagination');
-  const older = await call('GET', `/api/chats/${chatId}/messages?limit=2&before=${hist.data.messages[0].id}`, null, A);
-  ok(older.data.messages.length === 1 && !older.data.has_more, 'older page');
+  console.log('settings: pin / mute / archive');
+  ok((await call('PATCH', `/api/chats/${chatId}/settings`, { pinned: true, muted: true }, A)).data.chat.pinned_at && true, 'pin + mute chat');
+  const arch = await call('PATCH', `/api/chats/${chatId}/settings`, { archived: true }, A);
+  ok(arch.data.chat.archived && arch.data.chat.pinned_at === null, 'archive unpins');
 
   console.log('groups');
+  wa.drain(); ws.drain();
   const g = await call('POST', '/api/chats/group', { title: 'تیم کبوتر', usernames: ['sara'] }, A);
+  const gid = g.data.chat.id;
   ok(g.status === 201 && g.data.chat.member_count === 2 && g.data.chat.role === 'owner', 'create group');
-  ok((await ws.waitFor((e) => e.type === 'chat')).chat.title === 'تیم کبوتر', 'sara notified about new group');
-  ok((await call('POST', `/api/chats/${g.data.chat.id}/members`, { username: 'reza' }, S)).status === 403, 'non-admin cannot add members');
-  ok((await call('POST', `/api/chats/${g.data.chat.id}/members`, { username: 'reza' }, A)).data.chat.member_count === 3, 'owner adds reza');
-  ok((await call('POST', `/api/chats/${g.data.chat.id}/leave`, null, A)).status === 200, 'owner leaves');
-  const det = await call('GET', `/api/chats/${g.data.chat.id}`, null, S);
-  ok(det.data.members.find((m) => m.username === 'sara').role === 'owner', 'ownership passes to next member');
+  ok((await ws.waitFor((e) => e.type === 'chat' && e.chat.id === gid)).chat.title === 'تیم کبوتر', 'sara notified');
+  ok((await call('POST', `/api/chats/${gid}/members`, { username: 'reza' }, S)).status === 403, 'member cannot add people');
+  ok((await call('POST', `/api/chats/${gid}/members`, { usernames: ['reza'] }, A)).data.chat.member_count === 3, 'owner adds reza');
+  const svc = await ws.waitFor((e) => e.type === 'message' && e.message.kind === 'service' && e.message.service.action === 'added');
+  ok(svc.message.service.names[0] === 'رضا', 'service message: added');
+  ok((await call('PATCH', `/api/chats/${gid}/members/${saraId}`, { role: 'admin' }, A)).status === 200, 'promote sara to admin');
+  ok((await call('DELETE', `/api/chats/${gid}/members/${aliId}`, null, S)).status === 403, 'admin cannot kick owner');
+  const poll = await call('POST', `/api/chats/${gid}/messages`, { poll: { question: 'ناهار چی؟', options: ['پیتزا', 'کباب', 'سالاد'] } }, S);
+  ok(poll.data.message.kind === 'poll' && poll.data.message.poll.options.length === 3, 'create poll');
+  const v1 = await call('POST', `/api/messages/${poll.data.message.id}/vote`, { option: 1 }, R);
+  ok(v1.data.message.poll.my_vote === 1 && v1.data.message.poll.total === 1, 'vote');
+  ok((await call('POST', `/api/messages/${poll.data.message.id}/vote`, { option: 7 }, A)).status === 400, 'invalid vote rejected');
+  ok((await call('POST', `/api/messages/${poll.data.message.id}/vote`, { option: 1 }, A)).data.message.poll.options[1].votes === 2, 'second vote counted');
+  const inv = await call('POST', `/api/chats/${gid}/invite`, {}, S);
+  ok(inv.data.invite_token, 'admin creates invite link');
+  ok((await call('POST', `/api/chats/${gid}/invite`, {}, R)).status === 403, 'member cannot see invite link');
+  ok((await call('DELETE', `/api/chats/${gid}/members/${rezaId}`, null, S)).status === 200, 'admin kicks reza');
+  ok((await call('POST', '/api/join/preview', { invite: inv.data.invite_token }, R)).data.chat.title === 'تیم کبوتر', 'invite preview');
+  const joined = await call('POST', '/api/join', { invite: inv.data.invite_token }, R);
+  ok(joined.data.chat.id === gid && joined.data.chat.role === 'member', 'rejoin via invite link');
+  ok((await call('POST', '/api/join', { invite: 'nope' }, R)).status === 404, 'bad invite rejected');
+
+  const fw = await call('POST', '/api/messages/forward', { to_chat_id: gid, message_ids: [photo.data.message.id] }, S);
+  ok(fw.data.messages[0].forward.from_name === 'علی رضایی' && fw.data.messages[0].kind === 'photo', 'forward keeps original author + media');
+  ok((await call('POST', '/api/messages/forward', { to_chat_id: gid, message_ids: [photo.data.message.id] }, R)).status === 404, "can't forward from a chat you're not in");
+  ok((await call('POST', '/api/messages/delete', { message_ids: [fw.data.messages[0].id] }, R)).status === 403, "member can't delete others' messages");
+  wa.drain();
+  ok((await call('POST', '/api/messages/delete', { message_ids: [fw.data.messages[0].id] }, S)).status === 200, 'admin deletes message');
+  ok((await wa.waitFor((e) => e.type === 'messages_deleted')).message_ids[0] === fw.data.messages[0].id, 'delete propagates');
+
+  console.log('channels');
+  const ch = await call('POST', '/api/chats/channel', { title: 'اخبار کبوتر', username: 'kabootar_news', description: 'کانال رسمی' }, A);
+  const cid = ch.data.chat.id;
+  ok(ch.status === 201 && ch.data.chat.type === 'channel' && ch.data.chat.username === 'kabootar_news', 'create public channel');
+  ok((await call('POST', '/api/chats/channel', { title: 'x', username: 'ali_r' }, S)).status === 409, 'channel username cannot clash with a user');
+  await call('POST', `/api/chats/${cid}/messages`, { text: 'پست اول' }, A);
+  const rs = await call('GET', '/api/resolve/kabootar_news', null, R);
+  ok(rs.data.chat && !rs.data.chat.is_member, 'resolve @channel');
+  const sub = await call('POST', '/api/join', { username: 'kabootar_news' }, R);
+  ok(sub.data.chat.unread === 0 && sub.data.chat.can_post === false, 'subscribe: no unread backlog, cannot post');
+  ok((await call('POST', `/api/chats/${cid}/messages`, { text: 'spam' }, R)).status === 403, 'subscriber cannot post');
+  const post = await call('POST', `/api/chats/${cid}/messages`, { text: 'پست دوم' }, A);
+  await call('POST', `/api/chats/${cid}/read`, { message_id: post.data.message.id }, R);
+  const hist = await call('GET', `/api/chats/${cid}/messages`, null, A);
+  ok(hist.data.messages.at(-1).views === 2, 'channel views counter');
+  ok((await call('GET', `/api/chats/${cid}`, null, R)).data.members.length === 0, 'subscribers list hidden from subscribers');
+  ok((await call('GET', `/api/search?q=kabootar`, null, S)).data.chats.length === 1, 'public channel shows in search');
+
+  console.log('leave / delete');
+  ok((await call('POST', `/api/chats/${gid}/leave`, null, A)).status === 200, 'owner leaves group');
+  const det = await call('GET', `/api/chats/${gid}`, null, S);
+  ok(det.data.members.find((m) => m.username === 'sara').role === 'owner', 'ownership passes to an admin');
+  ok((await call('DELETE', `/api/chats/${cid}`, null, R)).status === 403, 'subscriber cannot delete channel');
+  ok((await call('DELETE', `/api/chats/${cid}`, null, A)).status === 200, 'owner deletes channel');
+  ok((await call('GET', `/api/chats/${cid}`, null, R)).status === 404, 'channel is gone for everyone');
 
   console.log('security');
   const bad = await new Promise((res) => {
@@ -148,19 +224,23 @@ function client(token) {
     w.onopen = () => w.send(JSON.stringify({ type: 'auth', token: 'x'.repeat(43) }));
     w.onclose = (e) => res(e.code);
   });
-  ok(bad === 4001, 'bad WS token is kicked (4001)');
+  ok(bad === 4001, 'bad WS token kicked');
   const page = await fetch(base + '/');
-  ok(page.status === 200 && page.headers.get('content-security-policy').includes("script-src 'self'"), 'web client served with CSP');
+  ok(page.status === 200 && page.headers.get('content-security-policy').includes("script-src 'self'"), 'web client served with strict CSP');
   const trav = await new Promise((res) => {
     const c = net.connect(port, '127.0.0.1', () => c.write('GET /../server.js HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'));
     let d = ''; c.on('data', (x) => (d += x)); c.on('end', () => res(d.split('\r\n')[0]));
   });
-  ok(!trav.includes('200'), 'path traversal blocked (' + trav + ')');
+  ok(!trav.includes('200'), 'path traversal blocked');
+  ok((await fetch(base + '/files/../../etc/passwd')).status === 404, 'file path traversal blocked');
+  const pw = await call('POST', '/api/me/password', { current_password: 'supersecret2', new_password: 'newsecret22' }, S);
+  ok(pw.status === 200, 'change password');
+  ok((await call('POST', '/api/auth/login', { username: 'sara', password: 'newsecret22' })).status === 200, 'login with new password');
   const lo = await call('POST', '/api/auth/logout', null, S);
   ok(lo.status === 200 && (await ws.closed) === 4001, 'logout revokes token and kicks sockets');
-  ok((await call('GET', '/api/me', null, S)).status === 401, 'revoked token no longer works');
-  const off = await wa.waitFor((e) => e.type === 'presence' && !e.online);
-  ok(off.last_seen > 0, 'ali sees sara go offline with last_seen');
+  await call('PATCH', '/api/me', { show_last_seen: false }, R);
+  const hidden = (await call('GET', '/api/resolve/reza', null, A)).data.user;
+  ok(hidden.last_seen_hidden && hidden.last_seen === null, 'last-seen privacy respected');
 
   wa.ws.close();
   console.log(`\nall ${passed} checks passed ✅`);

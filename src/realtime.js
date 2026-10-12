@@ -8,7 +8,7 @@ const hub = require('./hub');
 const service = require('./service');
 const config = require('./config');
 const { acceptUpgrade, rejectUpgrade } = require('./ws');
-const { HttpError, rateLimit } = require('./http-util');
+const { HttpError, rateLimit, clientIp } = require('./http-util');
 
 const AUTH_TIMEOUT_MS = 10_000;
 const HEARTBEAT_MS = 30_000;
@@ -16,14 +16,23 @@ const HEARTBEAT_MS = 30_000;
 const handlers = {
   send: (ws, m) => {
     rateLimit(`send:${ws.user.id}`, 30, 10_000);
-    service.sendMessage(ws.user, m.chat_id, m.text, m.reply_to);
+    return service.sendMessage(ws.user, m);
+  },
+  forward: (ws, m) => {
+    rateLimit(`send:${ws.user.id}`, 30, 10_000);
+    return service.forwardMessages(ws.user, m);
   },
   edit: (ws, m) => service.editMessage(ws.user, m.message_id, m.text),
-  delete: (ws, m) => service.deleteMessage(ws.user, m.message_id),
+  delete: (ws, m) => service.deleteMessages(ws.user, m.message_ids ?? [m.message_id]),
+  react: (ws, m) => {
+    rateLimit(`react:${ws.user.id}`, 60, 60_000);
+    return service.react(ws.user, m.message_id, m.emoji ?? null);
+  },
+  vote: (ws, m) => service.vote(ws.user, m.message_id, m.option ?? null),
   read: (ws, m) => service.markRead(ws.user, m.chat_id, m.message_id),
   typing: (ws, m) => {
-    rateLimit(`typing:${ws.user.id}`, 20, 10_000);
-    service.typing(ws.user, m.chat_id);
+    rateLimit(`typing:${ws.user.id}`, 30, 10_000);
+    service.typing(ws.user, m.chat_id, m.action);
   },
   ping: (ws) => ws.send({ type: 'pong', time: Date.now() }),
 };
@@ -32,8 +41,8 @@ function onAuthenticated(ws, user) {
   ws.user = user;
   ws.tokenHash = user.token_hash;
   const cameOnline = hub.add(user.id, ws);
-  ws.send({ type: 'ready', user: service.publicUser(user) });
-  if (cameOnline) service.broadcastPresence(user.id, true);
+  ws.send({ type: 'ready', user: service.selfUser(user) });
+  if (cameOnline) service.broadcastPresence(user.id);
 }
 
 function handleUpgrade(req, socket, head) {
@@ -44,6 +53,7 @@ function handleUpgrade(req, socket, head) {
   }
   const ws = acceptUpgrade(req, socket, head);
   if (!ws) return;
+  ws.ip = clientIp(req);
 
   const authTimer = setTimeout(() => !ws.user && ws.close(4001), AUTH_TIMEOUT_MS);
   let frames = 0;
@@ -63,7 +73,7 @@ function handleUpgrade(req, socket, head) {
     }
 
     if (!ws.user) {
-      const user = msg.type === 'auth' ? auth.userFromToken(msg.token) : null;
+      const user = msg.type === 'auth' ? auth.userFromToken(msg.token, ws.ip) : null;
       if (!user) {
         ws.send({ type: 'error', code: 'unauthorized', message: 'Authenticate first with a valid token' });
         return ws.close(4001);
@@ -75,7 +85,9 @@ function handleUpgrade(req, socket, head) {
     const handler = handlers[msg.type];
     if (!handler) return ws.send({ type: 'error', code: 'unknown_type', message: `Unknown type "${msg.type}"`, ref: msg.ref });
     try {
-      handler(ws, msg);
+      const result = handler(ws, msg);
+      // optional acknowledgement so clients can match a reply to their request
+      if (msg.ref !== undefined && result !== undefined) ws.send({ type: 'ack', ref: msg.ref, result });
     } catch (err) {
       if (!(err instanceof HttpError)) console.error('[ws]', err);
       ws.send({
@@ -92,7 +104,7 @@ function handleUpgrade(req, socket, head) {
     if (!ws.user) return;
     if (hub.remove(ws.user.id, ws)) {
       repo.touchUser(ws.user.id);
-      service.broadcastPresence(ws.user.id, false);
+      service.broadcastPresence(ws.user.id);
     }
   });
 }

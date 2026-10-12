@@ -1,4 +1,5 @@
 'use strict';
+const os = require('node:os');
 const path = require('node:path');
 
 const list = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -11,24 +12,32 @@ const railwayOrigins = [env.RAILWAY_PUBLIC_DOMAIN, env.RAILWAY_STATIC_URL]
   .filter(Boolean)
   .map((d) => (d.startsWith('http') ? d : `https://${d}`));
 
+const dbPath =
+  env.DB_PATH || (railwayVolume ? path.join(railwayVolume, 'chat.db') : path.join(__dirname, '..', 'data', 'chat.db'));
+
+const uploadsDir =
+  env.UPLOADS_DIR ||
+  (dbPath === ':memory:'
+    ? path.join(os.tmpdir(), `kabootar-uploads-${process.pid}`)
+    : path.join(path.dirname(dbPath), 'uploads'));
+
 module.exports = {
   onRailway,
   hasPersistentVolume: !onRailway || !!railwayVolume || !!env.DB_PATH,
   port: Number(env.PORT) || 8080,
   host: env.HOST || '0.0.0.0',
-  dbPath:
-    env.DB_PATH ||
-    (railwayVolume ? path.join(railwayVolume, 'chat.db') : path.join(__dirname, '..', 'data', 'chat.db')),
+  dbPath,
+  uploadsDir,
   publicDir: path.join(__dirname, '..', 'public'),
-  sessionTtlMs: (Number(env.SESSION_TTL_DAYS) || 30) * 24 * 60 * 60 * 1000,
+  sessionTtlMs: (Number(env.SESSION_TTL_DAYS) || 60) * 24 * 60 * 60 * 1000,
   // e.g. ALLOWED_ORIGINS=https://chat.example.com  (empty = allow any origin). On Railway: auto.
   allowedOrigins: env.ALLOWED_ORIGINS ? list(env.ALLOWED_ORIGINS) : onRailway ? railwayOrigins : [],
-  // behind nginx / a load balancer. On Railway: auto.
   trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY === '1' : onRailway,
   limits: {
     messageLength: 4096,
-    groupMembers: 1000,
+    groupMembers: 10000,
     wsFrameBytes: 1024 * 1024,
-    httpBodyBytes: 64 * 1024,
+    httpBodyBytes: 256 * 1024,
+    fileBytes: (Number(env.MAX_UPLOAD_MB) || 50) * 1024 * 1024,
   },
 };
