@@ -1029,7 +1029,7 @@ svg.verified .vb-check { fill: #fff; }
 
 /* swipe to reply */
 .msg .bubble { will-change: auto; }
-.swipe-ic { position: absolute; right: 8px; bottom: 6px; width: 32px; height: 32px; border-radius: 50%; background: var(--service); color: #fff; display: grid; place-items: center; transition: transform .15s; z-index: 0; }
+.swipe-ic { position: absolute; inset-inline-end: 8px; bottom: 6px; width: 32px; height: 32px; border-radius: 50%; background: var(--service); color: #fff; display: grid; place-items: center; transition: transform .15s; z-index: 0; }
 
 .swipe-ic .i { width: 18px; height: 18px; }
 .swipe-ic.ready { transform: scale(1.15); }
@@ -1139,3 +1139,168 @@ svg.i.o { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: r
 .main-settings .settings-foot { color: var(--text-3); text-align: center; font-size: 13px; padding: 4px 0 24px; }
 .kb-row .kbd-wrap { display: flex; gap: 4px; }
 kbd { font: 500 13px var(--font); background: var(--bg-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; padding: 2px 8px; color: var(--text); }
+
+/* =====================================================================
+   v3.3: Android-style recording, cropper, creation flows, K 2.2 chat chrome
+   ===================================================================== */
+/* floating header pill + composer pill (K 2.2) */
+.chat-head .back { position: relative; }
+.back-badge { position: absolute; top: -2px; inset-inline-end: -6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--accent); color: #fff;
+  font-size: 13px; font-weight: 500; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--float); }
+@media (max-width: 925px) {
+  .chat-head { margin: 8px 8px 0; border-radius: 28px; background: var(--float); box-shadow: var(--float-shadow); height: 56px; position: relative; }
+  .topbars { margin: 6px 8px 0; border-radius: 16px; overflow: hidden; }
+  .composer-wrap { padding: 4px 8px 10px; }
+}
+.composer { border-radius: 26px; border-bottom-left-radius: 26px; background: var(--float); }
+.composer > .tail { display: none; }
+.composer .row { padding: 3px 6px; min-height: 52px; align-items: flex-end; }
+.composer textarea { padding: 14px 6px 13px; }
+.composer .ibtn { margin-bottom: 5px; }
+.composer .attach-btn.open { color: var(--accent); background: var(--hover); }
+.send-btn { width: 54px; height: 54px; background: var(--accent); color: #fff; box-shadow: var(--float-shadow); position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
+.send-btn:hover { background: var(--accent-hover); color: #fff; }
+.send-btn .i.morph { animation: morphIcon .26s cubic-bezier(.3,1.4,.6,1); }
+@keyframes morphIcon { from { transform: scale(.2) rotate(-40deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.send-btn .i.flip.morph { animation: morphIconFlip .26s cubic-bezier(.3,1.4,.6,1); }
+@keyframes morphIconFlip { from { transform: scaleX(-1) scale(.2); opacity: 0; } to { transform: scaleX(-1); opacity: 1; } }
+.send-btn.holding { transform: scale(calc(1.45 * var(--lvl, 1))); transition: transform .08s linear; z-index: 6; }
+.send-btn.recording::before { inset: -10px; }
+.rec-tip { position: absolute; bottom: 74px; inset-inline-end: 6px; background: rgba(0,0,0,.78); color: #fff; font-size: 14px; padding: 8px 12px; border-radius: 10px; max-width: 260px;
+  animation: fade .15s; pointer-events: none; z-index: 8; transition: opacity .25s; }
+.rec-tip::after { content: ''; position: absolute; bottom: -6px; inset-inline-end: 22px; border: 6px solid transparent; border-top-color: rgba(0,0,0,.78); border-bottom: 0; }
+.rec-tip.hide { opacity: 0; }
+.composer-wrap { position: relative; }
+
+/* recording bar: trash · [● waves 0:07,76] · pause */
+.rec-ui { flex: 1; display: flex; align-items: center; gap: 6px; padding: 0 6px; height: 52px; position: relative; }
+.rec-ui .rec-trash { color: var(--danger); display: none; }
+.rec-ui .rec-pause { display: none; color: var(--text); }
+.rec-ui.locked .rec-trash, .rec-ui.locked .rec-pause { display: grid; }
+.rec-ui .rec-pill { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px; border-radius: 20px; background: var(--bg-2); }
+.rec-ui:not(.locked) .rec-pill { background: none; flex: none; }
+.rec-ui .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: blink 1s infinite; flex: none; }
+.rec-ui.paused .dot { animation: none; opacity: .5; }
+.rec-ui .tm { font-variant-numeric: tabular-nums; flex: none; min-width: 64px; font-size: 15px; direction: ltr; }
+.rec-ui .rec-wave { flex: 1; min-width: 0; height: 26px; gap: 3px; }
+.rec-ui:not(.locked) .rec-wave { display: none; }
+.rec-ui .rec-wave i { width: 3px; border-radius: 2px; background: var(--accent); }
+.rec-ui .rec-hint { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; color: var(--text-2); font-size: 15px; white-space: nowrap;
+  transform: translateX(calc(var(--slide, 0px) * var(--dirx, 1))); opacity: calc(1 - var(--slide, 0px) / 140px); animation: nudge 1.4s ease-in-out infinite; }
+[dir="rtl"] .rec-ui .rec-hint { --dirx: 1; }
+.rec-ui .rec-hint .i { width: 18px; height: 18px; }
+.rec-ui.locked .rec-hint { display: none; }
+@keyframes nudge { 50% { margin-inline-start: -10px; } }
+.rec-ui .rec-lock { position: absolute; bottom: 70px; inset-inline-end: -58px; width: 40px; padding: 10px 0 8px; border-radius: 20px; background: var(--float); box-shadow: var(--float-shadow);
+  display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--text-2); transform: translateY(var(--lift, 0px)); z-index: 7; }
+.rec-ui .rec-lock .i { width: 20px; height: 20px; }
+.rec-ui .rec-lock .up { transform: rotate(180deg); animation: bob 1.2s ease-in-out infinite; }
+@keyframes bob { 50% { translate: 0 -4px; } }
+.rec-ui.locked .rec-lock { display: none; }
+
+/* live round video while holding / locked */
+.round-rec.live { inset: 0 0 96px 0; pointer-events: none; z-index: 40; background: rgba(0,0,0,.45); }
+.round-rec.live .rr-circle { width: min(300px, 76vw); }
+
+/* cropper (Android) */
+.cropper { position: fixed; inset: 0; z-index: 90; background: #000; color: #fff; display: flex; flex-direction: column; animation: fade .15s; }
+.crop-top { display: flex; align-items: center; gap: 12px; padding: 8px 12px; height: 56px; font-size: 15px; color: rgba(255,255,255,.8); }
+.crop-top .ibtn { color: #fff; }
+.crop-stage { flex: 1; position: relative; overflow: hidden; touch-action: none; cursor: grab; }
+.crop-stage:active { cursor: grabbing; }
+.crop-img { position: absolute; top: 50%; left: 50%; max-width: none; transform-origin: center; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.crop-hole { position: absolute; top: 50%; left: 50%; width: var(--d, 280px); height: var(--d, 280px); transform: translate(-50%, -50%); border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.62); outline: 1.5px solid rgba(255,255,255,.75); pointer-events: none; }
+.crop-bottom { display: flex; align-items: center; gap: 10px; padding: 12px 14px 22px; }
+.crop-bottom .ibtn { color: #fff; }
+.crop-zoom-wrap { flex: 1; display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,.7); }
+.crop-zoom-wrap .i { width: 22px; height: 22px; } .crop-zoom-wrap .i.sm { width: 16px; height: 16px; }
+.crop-zoom { flex: 1; accent-color: var(--accent); }
+.crop-done { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; flex: none; }
+
+/* avatar editor in creation flows */
+.avatar-edit.small { width: 64px; height: 64px; margin: 0; flex: none; }
+.avatar-edit.small .ov svg { width: 26px; height: 26px; }
+.new-head { display: flex; align-items: center; gap: 16px; padding: 14px 16px 4px; }
+.new-head .field { flex: 1; margin: 0; }
+.new-section > .field { margin: 14px 16px 12px; }
+.set-photo .n { color: var(--accent); font-weight: 500; }
+.set-photo > svg { color: var(--accent) !important; }
+
+/* public link field */
+.link-wrap { padding: 4px 16px 6px; }
+.link-field { display: flex; align-items: center; direction: ltr; border: 1px solid var(--border); border-radius: 10px; background: var(--input); height: 54px; padding: 0 14px; transition: border-color .2s; }
+[data-theme="dark"] .link-field { border-color: #2f2f2f; }
+.link-field:focus-within { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.link-field .pfx { color: var(--text-2); white-space: nowrap; font-size: 15px; }
+.link-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 16px; padding: 0 0 0 1px; }
+.link-hint { font-size: 14px; color: var(--text-2); margin: 6px 4px 0; min-height: 18px; }
+.link-hint.good { color: var(--online); }
+.link-hint.bad { color: var(--danger); }
+.invite-box { padding: 6px 16px 10px; }
+.invite-url { background: var(--bg-2); border-radius: 10px; padding: 14px; font-size: 15px; word-break: break-all; cursor: pointer; text-align: left; }
+.invite-actions { display: flex; gap: 8px; margin-top: 10px; }
+.invite-actions .btn { flex: 1; height: 44px; font-size: 15px; }
+.settings-tab .pad { padding: 0; }
+
+/* =====================================================================
+   v3.4: Telegram Android behaviour on phones
+   ===================================================================== */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@media (pointer: coarse) {
+  html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+  input, textarea, select { font-size: max(16px, 1em); } /* iOS zooms into smaller inputs */
+  img, video { -webkit-user-drag: none; }
+}
+
+/* message menu: target highlight, staggered items, reactions popping in */
+.msg { transition: background-color .2s; }
+.msg.menu-target { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.menu .mi { animation: miIn .22s cubic-bezier(.2,.9,.3,1) both; animation-delay: calc(var(--i, 0) * 14ms); }
+@keyframes miIn { from { opacity: 0; transform: translateY(-6px); } }
+.reactions-pop button { animation: reIn .32s cubic-bezier(.3,1.5,.6,1) both; }
+.reactions-pop button:nth-child(2) { animation-delay: 25ms; } .reactions-pop button:nth-child(3) { animation-delay: 50ms; }
+.reactions-pop button:nth-child(4) { animation-delay: 75ms; } .reactions-pop button:nth-child(5) { animation-delay: 100ms; }
+.reactions-pop button:nth-child(6) { animation-delay: 125ms; } .reactions-pop button:nth-child(7) { animation-delay: 150ms; }
+.reactions-pop button:nth-child(n+8) { animation-delay: 175ms; }
+@keyframes reIn { from { opacity: 0; transform: scale(.2); } }
+.react-burst { position: absolute; top: 50%; left: 50%; font-size: 44px; pointer-events: none; z-index: 5; animation: burst .7s ease-out forwards; }
+@keyframes burst { 0% { transform: translate(-50%, -50%) scale(.3); opacity: 0; } 30% { transform: translate(-50%, -60%) scale(1.25); opacity: 1; } 100% { transform: translate(-50%, -140%) scale(.9); opacity: 0; } }
+
+/* stories: folded into the search pill by default, pulled open with the list */
+.stories-bar { transition: max-height .32s cubic-bezier(.2,.9,.25,1), padding .32s, opacity .25s; }
+.stories-pulling .stories-bar { transition: none; max-height: calc(var(--pull, 0) * 110px); opacity: var(--pull, 0); padding-block: calc(var(--pull, 0) * 6px) calc(var(--pull, 0) * 10px); }
+.stories-pulling .story-item { transform: scale(calc(.45 + .55 * var(--pull, 0))) translateY(calc((1 - var(--pull, 0)) * -24px)); transition: none; }
+.stories-pulling .story-stack { opacity: calc(1 - var(--pull, 0) * 1.6); transform: none; pointer-events: none; transition: none; }
+.stories-open .story-item { animation: storyIn .38s cubic-bezier(.2,.9,.3,1.2) both; }
+.stories-open .story-item:nth-child(2) { animation-delay: 30ms; } .stories-open .story-item:nth-child(3) { animation-delay: 60ms; }
+.stories-open .story-item:nth-child(4) { animation-delay: 90ms; } .stories-open .story-item:nth-child(n+5) { animation-delay: 120ms; }
+@keyframes storyIn { from { opacity: 0; transform: translateY(-28px) scale(.4); } }
+.stories-collapsed .story-item { transform: translateY(-24px) scale(.45); opacity: 0; transition: transform .25s, opacity .2s; }
+.story-stack { transition: opacity .25s, transform .3s cubic-bezier(.2,.9,.3,1.3); }
+.stories-collapsed .story-stack .ss { animation: ssIn .32s cubic-bezier(.3,1.4,.6,1) both; }
+.stories-collapsed .story-stack .ss:nth-child(2) { animation-delay: 40ms; } .stories-collapsed .story-stack .ss:nth-child(3) { animation-delay: 80ms; }
+@keyframes ssIn { from { transform: scale(.3); opacity: 0; } }
+
+/* Android page transition: chat slides over the list, list shifts and dims; swipe back follows the finger */
+@media (max-width: 760px) {
+  .chat { transition: transform .3s cubic-bezier(.2,.9,.25,1); will-change: transform; box-shadow: 0 0 24px rgba(0,0,0,.25); }
+  .sidebar { transition: transform .3s cubic-bezier(.2,.9,.25,1), visibility 0s; }
+  body.chat-open .sidebar { transform: translateX(25%); visibility: hidden; transition: transform .3s cubic-bezier(.2,.9,.25,1), visibility 0s .3s; }
+  .sidebar::after { content: ''; position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 30; }
+  body.chat-open .sidebar::after { opacity: .3; }
+  body.swiping .sidebar { visibility: visible !important; transition: none !important; }
+  body.swiping .sidebar::after { opacity: var(--dim, .3); transition: none; }
+  body.swiping .chat { transition: none !important; }
+  body.swipe-settle .chat, body.swipe-settle .sidebar { transition: transform .22s cubic-bezier(.2,.9,.25,1) !important; }
+  body.swipe-settle .sidebar::after { transition: opacity .22s; }
+  body.no-anim-once .chat, body.no-anim-once .sidebar, body.no-anim-once .sidebar::after { transition: none !important; }
+  /* sidebar sub-pages (settings, contacts…) slide like Android screens */
+  .stab { transition: transform .3s cubic-bezier(.2,.9,.25,1), filter .3s; }
+}
+
+/* Android ripple: slightly stronger on touch */
+@media (pointer: coarse) { .ripple { opacity: .14; } }
+html, body { overscroll-behavior: none; }
+.list, .messages, .stab-body { overscroll-behavior-y: contain; }

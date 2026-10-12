@@ -574,10 +574,10 @@ R.message = (c, m, flags = {}) => {
       if (S.select) return;
       App.messageMenu(c, m, e, group);
     });
-    UI.longPress(bubble, (e) => App.messageMenu(c, m, e, group));
+    if (!(App.androidTaps && App.androidTaps(el, bubble, c, m, group))) UI.longPress(bubble, (e) => App.messageMenu(c, m, e, group));
     if (c.can_post) UI.swipeReply(el, bubble, () => App.startReply(m));
     el.addEventListener('click', (e) => { if (S.select && !e.target.closest('.album .photo')) { e.preventDefault(); App.toggleSelect(m, group); } });
-    el.addEventListener('dblclick', (e) => { if (S.select) return; if (!e.target.closest('a, button, video, .photo') && c.can_post) { getSelection()?.removeAllRanges(); App.startReply(m); } });
+    el.addEventListener('dblclick', (e) => { if (S.select || (typeof touchUI === 'function' && touchUI())) return; if (!e.target.closest('a, button, video, .photo') && c.can_post) { getSelection()?.removeAllRanges(); App.startReply(m); } });
   }
   return el;
 };

@@ -33,7 +33,9 @@ const fillMenu = (menu, items) => {
   for (const it of items) {
     if (!it) continue;
     if (it === 'sep') { if (menu.lastChild && !menu.lastChild.classList?.contains('sep')) menu.append(h('div', { class: 'sep' })); continue; }
-    menu.append(menuItem(it));
+    const mi = menuItem(it);
+    mi.style.setProperty('--i', String(menu.childElementCount));
+    menu.append(mi);
   }
   if (menu.lastChild?.classList?.contains('sep')) menu.lastChild.remove();
 };
@@ -64,7 +66,7 @@ UI.menu = (items, opts = {}) => {
   if (opts.quick) menu.append(opts.quick);
   if (opts.cls) menu.classList.add(...opts.cls.split(' '));
   fillMenu(menu, items);
-  const backdrop = h('div', { class: 'backdrop', onmousedown: (e) => { e.preventDefault(); UI.closeMenu(); }, oncontextmenu: (e) => { e.preventDefault(); UI.closeMenu(); } });
+  const backdrop = h('div', { class: 'backdrop' + (opts.dim ? ' dim' : ''), onmousedown: (e) => { e.preventDefault(); UI.closeMenu(); }, oncontextmenu: (e) => { e.preventDefault(); UI.closeMenu(); } });
   const extra = opts.reactions || null;
   document.body.append(backdrop, menu);
   if (extra) document.body.append(extra);
@@ -332,11 +334,12 @@ UI.swipeReply = (row, bubble, cb) => {
     const p = e.touches[0];
     const mx = p.clientX - sx, my = p.clientY - sy;
     if (!locked) { if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { active = false; return; } if (Math.abs(mx) > 10) locked = true; else return; }
-    dx = Math.min(0, Math.max(-90, mx));
-    bubble.style.transform = `translateX(${dx}px)`;
+    const sign = document.documentElement.dir === 'rtl' ? 1 : -1;
+    dx = Math.min(90, Math.max(0, mx * sign));
+    bubble.style.transform = `translateX(${dx * sign}px)`;
     if (!ic.parentNode) row.append(ic);
-    ic.style.opacity = String(Math.min(1, -dx / 60));
-    ic.classList.toggle('ready', dx <= -60);
+    ic.style.opacity = String(Math.min(1, dx / 60));
+    ic.classList.toggle('ready', dx >= 60);
   }, { passive: true });
   const end = () => {
     if (!active) return;
@@ -345,7 +348,7 @@ UI.swipeReply = (row, bubble, cb) => {
     bubble.style.transform = '';
     setTimeout(() => (bubble.style.transition = ''), 220);
     ic.remove();
-    if (dx <= -60) { navigator.vibrate?.(10); cb(); }
+    if (dx >= 60) { navigator.vibrate?.(10); cb(); }
   };
   bubble.addEventListener('touchend', end);
   bubble.addEventListener('touchcancel', end);

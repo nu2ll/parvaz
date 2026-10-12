@@ -81,12 +81,15 @@ function profile(user, uidRaw) {
   return { user: service.publicUser(u, user.id), common_chats: u.id === user.id ? 0 : repo.commonChats(user.id, u.id) };
 }
 
-function checkUsername(user, raw) {
+function checkUsername(user, raw, chatIdRaw) {
   let name;
   try { name = v.username(String(raw || '')); } catch (e) { return { valid: false, available: false, reason: e.code === 'username_taken' ? 'reserved' : 'invalid' }; }
   const u = repo.userByUsername(name);
   const c = repo.chatByUsername(name);
-  return { valid: true, available: (!u || u.id === user.id) && !c };
+  const chatId = Number(chatIdRaw) || 0;
+  // the chat's own current link counts as available (and the user's own name when renaming yourself)
+  const ownChat = c && chatId && c.id === chatId && repo.membership(chatId, user.id);
+  return { valid: true, available: (chatId ? !u : !u || u.id === user.id) && (!c || !!ownChat) };
 }
 
 module.exports = { listContacts, addContact, removeContact, listBlocked, block, unblock, profile, checkUsername };

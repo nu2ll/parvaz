@@ -22,8 +22,10 @@ App.openSettings = (page) => {
         h('div', { class: 'ip-over' }, name, h('div', { class: 'st' }, 'آنلاین')))
       : h('div', { class: 'profile-top' }, h('div', { class: 'pt-av', onclick: () => { if (me2.avatar) { expanded = true; paint(); } else App.settingsPage('profile'); } }, userAvatar(me2, 's120')),
         name, h('div', { class: 'st' }, 'آنلاین'));
+    const setPhoto = h('div', { class: 'set-row clickable accent set-photo', onclick: (e) => App.setProfilePhoto(e.currentTarget) }, icon('oCamera'), h('div', { class: 'body' }, h('div', { class: 'n' }, me2.avatar ? 'تغییر عکس پروفایل' : 'تنظیم عکس پروفایل')));
     body.replaceChildren(
       top,
+      UI.section(null, setPhoto),
       UI.section(null, [
         crow('at', 'blue', me2.username, 'نام کاربری', () => App.settingsPage('profile'), null, 'ltr-n'),
         crow('info', 'slate', me2.bio || 'افزودن بیوگرافی', 'بیوگرافی', () => App.settingsPage('profile'), null, 'multi'),
@@ -105,11 +107,11 @@ const SETTINGS_PAGES = {
       }, 300);
     });
     const tab = push('ویرایش پروفایل', [
-      avatarEditor({ name: me.display_name, avatar: me.avatar, seed: me.id }, async (id) => { S.me = (await api('PATCH', '/api/me', { avatar: id })).user; }),
+      avatarEditor({ name: me.display_name, avatar: me.avatar, seed: me.id }, async (id) => { S.me = (await api('PATCH', '/api/me', { avatar: id })).user; },
+        { onRemove: async () => { S.me = (await api('PATCH', '/api/me', { avatar: null })).user; } }),
       h('div', { class: 'section' }, name, bio, h('div', { class: 'section-foot' }, 'هر چیزی درباره خودتان: سن، شغل یا شهر. مثلاً «طراح از شیراز».')),
       h('div', { class: 'section' }, h('div', { class: 'section-caption' }, 'نام کاربری'), uname,
         h('div', { class: 'section-foot' }, 'دیگران می‌توانند با این نام شما را پیدا کنند و بدون دانستن چیز دیگری پیام بدهند. حروف a-z، عدد و _ ، حداقل ۴ حرف.')),
-      me.avatar ? UI.section(null, UI.row('trash', 'حذف عکس پروفایل', null, async () => { try { S.me = (await api('PATCH', '/api/me', { avatar: null })).user; App.side.pop(tab); toast('حذف شد'); } catch (e) { toast(e.message); } }, 'danger')) : null,
     ], {
       fab: { icon: 'check', title: 'ذخیره', onClick: async () => {
         if (!unameOk) return toast('نام کاربری را درست کنید');

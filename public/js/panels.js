@@ -139,63 +139,6 @@ App.openCalls = async () => {
   } catch (e) { list.replaceChildren(h('div', { class: 'empty-hint' }, e.message)); }
 };
 
-/* ---------- new group / channel (Web K flow: members → details) ---------- */
-App.newChatDialog = (type) => {
-  const isChannel = type === 'channel';
-  const details = () => {
-    let avatarFile = null;
-    const title = UI.field(isChannel ? 'نام کانال' : 'نام گروه', { maxlength: 128 });
-    const desc = UI.field('توضیحات (اختیاری)', { multiline: true, rows: 2, maxlength: 255 });
-    const link = isChannel ? UI.field('لینک عمومی (اختیاری)', { dir: 'ltr', placeholder: 'my_channel', maxlength: 32 }, 'اگر بگذارید، همه می‌توانند کانال را با @نام پیدا کنند') : null;
-    const av = avatarEditor({ name: '?', seed: Date.now() }, async (id) => { avatarFile = id; });
-    return { title, desc, link, av, getAvatar: () => avatarFile };
-  };
-  const create = async (d, users, fabBtn) => {
-    if (!d.title.input.value.trim()) { d.title.input.focus(); d.title.classList.add('error'); return toast('یک نام بنویسید'); }
-    fabBtn.disabled = true;
-    try {
-      const { chat } = await api('POST', `/api/chats/${type}`, {
-        title: d.title.input.value.trim(), description: d.desc.input.value.trim(),
-        username: d.link?.input.value.trim().replace(/^@/, '') || undefined,
-        usernames: users.map((u) => u.username),
-      });
-      if (d.getAvatar()) await api('PATCH', `/api/chats/${chat.id}`, { avatar: d.getAvatar() }).catch(() => {});
-      S.chats.set(chat.id, chat);
-      App.side.popAll();
-      App.openChat(chat.id);
-    } catch (e) { toast(e.message); fabBtn.disabled = false; }
-  };
-  if (isChannel) {
-    const d = details();
-    const tab = App.side.push({
-      title: 'کانال جدید', body: [d.av, d.title, d.desc, d.link],
-      fab: { icon: 'back', title: 'بعدی', onClick: () => {
-        if (!d.title.input.value.trim()) return toast('یک نام بنویسید');
-        const picker = userPicker({ multiple: true });
-        const t2 = App.side.push({ title: 'افزودن مشترک', body: picker.el, fab: { icon: 'check', title: 'ساخت', onClick: () => create(d, [...picker.selected.values()], t2.fab) } });
-      } },
-    });
-    setTimeout(() => d.title.input.focus(), 50);
-    return tab;
-  }
-  const picker = userPicker({ multiple: true, onChange: (sel) => tab.fab.classList.toggle('hide', false) });
-  const tab = App.side.push({
-    title: 'افزودن اعضا', body: picker.el,
-    fab: { icon: 'back', title: 'بعدی', onClick: () => {
-      const users = [...picker.selected.values()];
-      const d = details();
-      const t2 = App.side.push({
-        title: 'گروه جدید', body: [d.av, d.title, d.desc, h('div', { class: 'section-caption' }, `${fa(users.length + 1)} عضو`), h('div', { class: 'picker-list' }, [S.me, ...users].map((u) => h('div', { class: 'pick' }, userAvatar(u, 's42'), h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, u.id === S.me.id ? 'شما' : userName(u)), h('div', { class: 's' }, lastSeenText(u))))))],
-        fab: { icon: 'check', title: 'ساخت', onClick: () => create(d, users, t2.fab) },
-      });
-      d.title.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(d, users, t2.fab); });
-      setTimeout(() => d.title.input.focus(), 50);
-    } },
-  });
-  setTimeout(() => picker.input.focus(), 50);
-  return tab;
-};
-
 App.addMembersDialog = (c) => {
   const picker = userPicker({ multiple: true });
   const add = h('button', { class: 'btn flat' }, 'افزودن');
@@ -458,24 +401,6 @@ async function squareImage(file, size = 640, type = 'image/jpeg') {
     return blob ? new File([blob], type === 'image/png' ? 'image.png' : 'avatar.jpg', { type }) : file;
   } catch { return file; }
 }
-async function uploadAvatar() {
-  const f = await pickImage();
-  if (!f) return null;
-  toast('در حال آپلود…');
-  return uploadFile(await squareImage(f), 'avatar.jpg');
-}
-function avatarEditor(ent, onChange) {
-  const box = h('div', { class: 'avatar-edit', title: 'تغییر عکس' }, avatarEl(ent, 's120'), h('div', { class: 'ov' }, icon('camera')));
-  box.addEventListener('click', async () => {
-    try {
-      const f = await uploadAvatar();
-      if (!f) return;
-      await onChange(f.id);
-      box.firstChild.replaceWith(avatarEl({ ...ent, avatar: f.url }, 's120'));
-    } catch (e) { toast(e.message); }
-  });
-  return box;
-}
 
 /* =====================================================================
    INFO COLUMN (right sidebar, sliding tabs)
@@ -632,17 +557,20 @@ App.editChatDialog = (c) => {
   if ($('#info').hidden || App.infoChat !== c.id) App.openInfo(c.id);
   const title = UI.field(c.type === 'channel' ? 'نام کانال' : 'نام گروه', { value: c.title, maxlength: 128 });
   const desc = UI.field('توضیحات', { multiline: true, rows: 3, value: c.description || '', maxlength: 255 });
-  const link = UI.field('لینک عمومی', { dir: 'ltr', value: c.username || '', placeholder: 'خالی = خصوصی', maxlength: 32 },
-    c.username ? publicUrl(c.username) : 'با گذاشتن نام، همه می‌توانند با @نام پیدا و عضو شوند');
+  const noun = c.type === 'channel' ? 'کانال' : 'گروه';
+  const typeRow = UI.row('link', `نوع ${noun}`, c.username ? `عمومی · @${c.username}` : 'خصوصی', () => App.channelTypeStep(S.chats.get(c.id) || c, {
+    editing: true, slider: App.infoSide, onSaved: (ch) => { typeRow.querySelector('.s').textContent = ch.username ? `عمومی · @${ch.username}` : 'خصوصی'; },
+  }));
   let forum = !!c.is_forum;
   const body = [
-    avatarEditor({ name: c.title, avatar: c.avatar, seed: c.id * 7 + 3 }, (id) => api('PATCH', `/api/chats/${c.id}`, { avatar: id })),
-    h('div', { class: 'section' }, title, desc, link),
+    avatarEditor({ name: c.title, avatar: c.avatar, seed: c.id * 7 + 3 }, (id) => api('PATCH', `/api/chats/${c.id}`, { avatar: id }),
+      { onRemove: () => api('PATCH', `/api/chats/${c.id}`, { avatar: null }) }),
+    h('div', { class: 'section' }, title, desc),
+    UI.section(null, typeRow),
     c.type === 'group' ? UI.section(null, UI.switchRow('topic', 'تاپیک‌ها', 'گفتگوهای گروه در چند موضوع جدا', forum, (v) => { forum = v; }), 'وقتی تاپیک‌ها فعال باشند، پیام‌های قبلی به تاپیک «عمومی» منتقل می‌شوند.') : null,
     UI.section(null, [
       UI.row('link', 'لینک‌های دعوت', null, () => App.inviteDialog(c)),
       UI.row('group', c.type === 'channel' ? 'مشترک‌ها' : 'اعضا', fa(c.member_count), () => { App.infoSide.pop(); }),
-      c.avatar ? UI.row('trash', 'حذف عکس', null, async () => { try { await api('PATCH', `/api/chats/${c.id}`, { avatar: null }); toast('حذف شد'); } catch (e) { toast(e.message); } }, 'danger') : null,
     ]),
     c.role === 'owner' ? UI.section(null, UI.row('trash', c.type === 'channel' ? 'حذف کانال' : 'حذف گروه', 'برای همه اعضا حذف می‌شود', async () => {
       if (await UI.ask('حذف برای همه', `«${c.title}» و همه پیام‌هایش برای همیشه حذف می‌شود.`, 'حذف', true)) {
@@ -654,7 +582,7 @@ App.editChatDialog = (c) => {
     title: 'ویرایش', body, cls: 'edit-tab',
     fab: { icon: 'check', title: 'ذخیره', onClick: async () => {
       try {
-        const payload = { title: title.input.value.trim(), description: desc.input.value.trim(), username: link.input.value.trim().replace(/^@/, '') || null };
+        const payload = { title: title.input.value.trim(), description: desc.input.value.trim() };
         if (c.type === 'group' && forum !== !!c.is_forum) payload.is_forum = forum;
         const { chat } = await api('PATCH', `/api/chats/${c.id}`, payload);
         S.chats.set(chat.id, chat);

@@ -82,7 +82,7 @@ async function until(fn, label, ms = 3000) {
   win.window = win;
   document.addEventListener = (t, fn) => (listeners['doc:' + t] ||= []).push(fn);
   const ctx = vm.createContext(win);
-  for (const f of ['core', 'ui', 'render', 'wallpaper', 'app', 'media', 'panels', 'settings', 'stories', 'calls', 'lock']) {
+  for (const f of ['core', 'ui', 'render', 'wallpaper', 'app', 'media', 'panels', 'recorder', 'creator', 'android', 'settings', 'stories', 'calls', 'lock']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   }
   const run = (code) => vm.runInContext(code, ctx);
@@ -185,6 +185,60 @@ async function until(fn, label, ms = 3000) {
   click([...$$('.modal .btn')].find((b) => b.textContent === 'ارسال'));
   await until(() => $('.msg.mine .filecard'), 'file card');
   ok(run('document.querySelector(".msg.mine .filecard .fn").textContent') === 'doc.pdf', 'document message rendered');
+
+  console.log('mic: tap to switch voice ⇄ video (Android)');
+  run('App.recMode = "voice"; App.updateSendBtn()');
+  ok(run('el.sendBtn.dataset.mode') === 'mic', 'empty composer shows the mic');
+  const pd = new Event('pointerdown', { bubbles: true }); Object.assign(pd, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+  $('.send-btn').dispatchEvent(pd);
+  const pu = new Event('pointerup', { bubbles: true }); Object.assign(pu, { pointerId: 1 });
+  $('.send-btn').dispatchEvent(pu);
+  ok(run('el.sendBtn.dataset.mode') === 'round' && $('.send-btn svg.morph'), 'a quick tap turns it into the video-message button');
+  ok($('.rec-tip') && $('.rec-tip').textContent.includes('ویدیو'), 'hint bubble explains hold vs tap');
+  run('Rec.toggleMode()');
+  ok(run('el.sendBtn.dataset.mode') === 'mic', 'tap again → back to voice');
+
+  console.log('new channel (Android flow)');
+  run('App.newChannelFlow()');
+  await until(() => $('.new-head .field input'), 'channel details step');
+  $('.new-head .field input').value = 'کانال تست';
+  click(run('App.side.top().fab'));
+  await until(() => $$('.radios .set-row').length === 2, 'channel type step (public / private)');
+  await until(() => $('.invite-url') && $('.invite-url').textContent.includes('/#/join/'), 'private channel shows its invite link');
+  click([...$$('.radios .set-row')].find((r) => r.dataset.v === 'public'));
+  await until(() => $('.link-field input'), 'public link field');
+  const li = $('.link-field input'); li.value = 'test_chan'; li.dispatchEvent(new Event('input', { bubbles: true }));
+  await until(() => $('.link-hint.good'), 'link availability check', 4000);
+  click(run('App.side.top().fab'));
+  await until(() => run('App.side.top()?.opts.title') === 'افزودن مشترک', 'add subscribers step');
+  click(run('App.side.top().fab'));
+  await until(() => [...run('[...S.chats.values()]')].some((c) => c.username === 'test_chan' && c.type === 'channel'), 'public channel created with its link');
+  ok(run('S.chats.get(S.active).username') === 'test_chan', 'new channel opens');
+
+  console.log('photo picker + cropper');
+  run('UI.cropImage(new File([new Uint8Array([1,2,3])], "x.png", { type: "image/png" }))');
+  ok($('.cropper .crop-hole') && $('.cropper .crop-done'), 'circular cropper opens');
+  click($('.cropper .crop-top .ibtn'));
+  ok(!$('.cropper'), 'cropper closes on cancel');
+
+  console.log('Android touch: tap → menu, double tap → reaction');
+  const saraChat = run(`[...S.chats.values()].find((c) => c.type === 'private' && c.peer && c.peer.username === 'sara').id`);
+  run(`App.openChat(${saraChat})`);
+  await until(() => $$('.msg .bubble .text').length, 'chat with messages');
+  run('globalThis.__mm = matchMedia; window.matchMedia = globalThis.matchMedia = () => ({ matches: true, addEventListener() {}, addListener() {} }); App.renderMessages()');
+  await sleep(50);
+  const tapEv = () => { const ev = new Event('click', { bubbles: true }); Object.assign(ev, { clientX: 50, clientY: 50 }); return ev; };
+  $('.msg .bubble .text').dispatchEvent(tapEv());
+  await until(() => $('.menu.msg-menu'), 'single tap opens the message menu', 1500);
+  ok($('.msg.menu-target') && $('.reactions-pop'), 'tapped message is highlighted with the reactions bar');
+  run('UI.closeMenu()');
+  ok(!$('.msg.menu-target'), 'highlight cleared on close');
+  $('.msg .bubble .text').dispatchEvent(tapEv());
+  $('.msg .bubble .text').dispatchEvent(tapEv());
+  ok($('.react-burst'), 'double tap sends a quick reaction');
+  await sleep(400);
+  ok(!$('.menu.msg-menu'), 'double tap does not open the menu');
+  run('window.matchMedia = globalThis.matchMedia = globalThis.__mm; App.renderMessages()');
 
   console.log('main menu + settings (Web K 2.2)');
   click($('.menu-btn'));

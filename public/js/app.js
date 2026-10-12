@@ -141,20 +141,20 @@ App.buildShell = () => {
   el.folders = h('div', { class: 'folders', role: 'tablist' });
   el.storiesBar = h('div', { class: 'stories-bar', hidden: true });
   el.conn = h('div', { class: 'conn' });
-  el.list.addEventListener('scroll', () => el.mainTab.classList.toggle('stories-collapsed', el.list.scrollTop > 24), { passive: true });
   el.menuBtn = h('button', { class: 'ibtn menu-btn', type: 'button', title: 'منو', 'aria-label': 'منو', onclick: () => (App.searching() ? App.endSearch() : App.mainMenu()) },
     h('span', { class: 'burger' }, h('i'), h('i'), h('i')));
   el.lockBtn = ibtn('lock', 'قفل', () => Lock.lockNow(), 'lock-btn');
   el.lockBtn.hidden = !(typeof Lock !== 'undefined' && Lock.enabled());
   el.fabNew = h('button', { class: 'fab fab-new', title: 'گفتگوی جدید', type: 'button', onclick: (e) => App.newMenu(e.currentTarget) }, icon('edit', 'fab-ic'), icon('close', 'fab-x'));
   // Web K 2.2: when the list scrolls, stories fold into a small stack inside the search pill
-  el.storyStack = h('button', { class: 'story-stack', type: 'button', title: 'استوری‌ها', hidden: true, onclick: () => { el.list.scrollTop = 0; el.mainTab.classList.remove('stories-collapsed'); } });
+  el.storyStack = h('button', { class: 'story-stack', type: 'button', title: 'استوری‌ها', hidden: true, onclick: () => { el.list.scrollTop = 0; App.setStoriesOpen(true); } });
   el.listWrap = h('div', { class: 'list-wrap' }, el.folders, el.list);
   el.mainTab = h('div', { class: 'stab main in' },
     h('div', { class: 'side-head' }, el.menuBtn, h('div', { class: 'search-box' }, icon('oSearch'), el.search,
       h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close')), el.storyStack), el.lockBtn),
     el.conn, el.storiesBar, el.listWrap, el.fabNew);
   side.replaceChildren(el.mainTab);
+  App.bindStoriesPull?.();
   App.side = new UI.Slider(side, el.mainTab);
   let t;
   el.search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(App.renderSidebar, 200); side.classList.toggle('searching', App.searching()); });
@@ -164,7 +164,7 @@ App.buildShell = () => {
   App.buildChatArea();
   App.buildInfo();
 };
-App.version = () => String(S.config.version || '3.2.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+App.version = () => String(S.config.version || '3.4.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 App.searching = () => !!el.search?.value.trim() || document.activeElement === el.search;
 App.endSearch = () => { el.search.value = ''; el.search.blur(); $('#sidebar').classList.remove('searching'); App.renderSidebar(); };
 
@@ -311,7 +311,22 @@ App.renderArchive = () => {
   tab.list.replaceChildren(...(chats.length ? chats.map((c) => R.chatItem(c)) : [h('div', { class: 'empty-hint' }, 'بایگانی خالی است.\nگفتگوها را با کلیک راست بایگانی کنید.')]));
 };
 
+// mobile back button carries the unread counter of the other chats (Web K)
+App.backBtn = (c) => {
+  const b = ibtn('back', 'بازگشت', () => (c.is_forum && narrow() ? App.showEmpty() : App.closeChat()), 'back');
+  b.append(h('span', { class: 'back-badge', hidden: true }));
+  return b;
+};
+App.paintBackBadge = () => {
+  const b = el.head?.querySelector('.back-badge');
+  if (!b) return;
+  let n = 0;
+  for (const c of S.chats.values()) if (c.unread && !c.muted && c.id !== S.active && !c.archived) n++;
+  b.textContent = n > 99 ? '+۹۹' : fa(n);
+  b.hidden = !n;
+};
 App.updateTitle = () => {
+  App.paintBackBadge();
   let n = 0;
   for (const c of S.chats.values()) if (c.unread && !c.muted) n++;
   document.title = n ? `(${fa(n)}) کبوتر` : 'کبوتر';
@@ -749,6 +764,7 @@ App.loadAround = async (id, msgId) => {
 
 /* ---------- header / pinned / bottom ---------- */
 App.renderChatChrome = () => {
+  setTimeout(() => App.paintBackBadge(), 0);
   const c = S.chats.get(S.active);
   if (!c) return;
   App.renderHeader(c);
@@ -768,7 +784,7 @@ App.renderHeader = (c = S.chats.get(S.active)) => {
   const title = t ? (t.general ? 'عمومی' : t.title) : chatTitle(c);
   const status = t ? (st.typing ? st.text : chatTitle(c)) : st.text;
   el.head.replaceChildren(
-    ibtn('back', 'بازگشت', () => (c.is_forum && narrow() ? App.showEmpty() : App.closeChat()), 'back'),
+    App.backBtn(c),
     h('div', { class: 'who', onclick: () => App.toggleInfo() },
       t ? App.topicIcon(t, 's40') : chatAvatar(c, 's42'),
       h('div', { class: 'wt' },
@@ -1113,15 +1129,17 @@ App.buildComposer = (c) => {
   el.suggest = h('div', { class: 'sticker-suggest', hidden: true });
   el.emojiBtn = h('button', { class: 'ibtn emoji-btn', type: 'button', title: 'اموجی، استیکر و GIF', onclick: () => App.toggleEmoji() }, icon('smile'));
   el.attachBtn = ibtn('attach', 'پیوست', () => App.attachMenu());
-  el.row = h('div', { class: 'row' }, el.emojiBtn, el.input, el.attachBtn);
+  el.attachBtn.classList.add('attach-btn');
+  el.row = h('div', { class: 'row' }, el.attachBtn, el.input, el.emojiBtn);
   el.fmt = h('div', { class: 'fmt-bar', hidden: true }, [
     ['b', '**', 'پررنگ'], ['i', '__', 'کج'], ['s', '~~', 'خط‌خورده'], ['code', '`', 'تک‌فاصله'], ['spoiler', '||', 'اسپویلر'],
   ].map(([cls, mark, label]) => h('button', { type: 'button', class: 'f-' + cls, title: label, onmousedown: (e) => { e.preventDefault(); App.wrapSelection(mark); } }, cls === 'spoiler' ? '▒' : cls === 'code' ? '</>' : cls.toUpperCase())),
   h('button', { type: 'button', class: 'f-link', title: 'لینک', onmousedown: async (e) => { e.preventDefault(); App.insertLink(); } }, icon('link')));
   el.composer = h('div', { class: 'composer' }, el.bar, el.fmt, el.row, R.tail());
-  el.sendBtn = h('button', { class: 'send-btn', type: 'button', 'aria-label': 'ارسال', onclick: () => App.onSendBtn() });
+  el.sendBtn = h('button', { class: 'send-btn', type: 'button', 'aria-label': 'ارسال', onclick: (e) => App.onSendBtn(e) });
   el.sendBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); App.sendBtnMenu(e); });
-  UI.longPress(el.sendBtn, (e) => App.sendBtnMenu(e));
+  UI.longPress(el.sendBtn, (e) => { if (el.input?.value.trim()) App.sendBtnMenu(e); });
+  Rec.bind(el.sendBtn);
   el.fileInput = h('input', { type: 'file', multiple: true, hidden: true });
   el.fileInput.addEventListener('change', () => {
     const files = [...el.fileInput.files];
@@ -1218,21 +1236,26 @@ App.insertText = (t, keepFocus) => {
   App.updateSendBtn();
   App.suggestStickers();
 };
-App.updateSendBtn = () => {
+App.updateSendBtn = (morph) => {
   if (!el.sendBtn) return;
   const hasText = !!el.input?.value.trim() || !!S.edit;
-  const mode = S.rec ? 'rec' : hasText ? 'send' : App.recMode === 'round' ? 'round' : 'mic';
+  const mode = S.rec ? (S.rec.locked ? 'rec' : 'hold') : hasText ? 'send' : App.recMode === 'round' ? 'round' : 'mic';
   if (el.sendBtn.dataset.mode === mode) return;
+  const prev = el.sendBtn.dataset.mode;
   el.sendBtn.dataset.mode = mode;
-  el.sendBtn.classList.toggle('recording', mode === 'rec');
-  el.sendBtn.replaceChildren(icon(mode === 'mic' ? 'mic' : mode === 'round' ? 'camera' : S.edit ? 'check' : 'send', mode === 'send' && !S.edit ? 'flip' : ''));
-  el.sendBtn.title = mode === 'mic' ? 'ضبط پیام صوتی (کلیک راست: پیام ویدیویی)' : mode === 'round' ? 'ضبط پیام ویدیویی (کلیک راست: پیام صوتی)' : 'ارسال';
+  el.sendBtn.classList.toggle('recording', mode === 'rec' || mode === 'hold');
+  el.sendBtn.classList.toggle('holding', mode === 'hold');
+  const name = mode === 'mic' ? 'mic' : mode === 'round' ? 'camera' : mode === 'hold' ? (S.rec.kind === 'round' ? 'camera' : 'mic') : S.edit ? 'check' : 'send';
+  const ic = icon(name, (name === 'send' ? 'flip ' : '') + (morph || (prev && prev !== mode && mode !== 'hold') ? 'morph' : ''));
+  el.sendBtn.replaceChildren(ic);
+  el.sendBtn.title = mode === 'mic' ? 'برای ضبط صدا نگه دارید، برای ویدیو بزنید' : mode === 'round' ? 'برای ضبط ویدیو نگه دارید، برای صدا بزنید' : 'ارسال';
 };
-App.onSendBtn = () => {
-  if (S.rec) return App.stopRecording(true);
+App.onSendBtn = (e) => {
+  if (Date.now() < Rec.ignoreClickUntil) return;
+  if (S.rec) return Rec.stop(true);
   if (el.input?.value.trim() || S.edit) return App.sendText();
-  if (App.recMode === 'round') return App.recordRound();
-  App.startRecording();
+  // keyboard activation (Enter / Space) starts a locked recording; pointers are handled by Rec.bind
+  if (e && e.detail === 0) Rec.start(App.recMode === 'round' ? 'round' : 'voice');
 };
 App.sendBtnMenu = (e) => {
   if (S.rec) return;
@@ -1244,10 +1267,7 @@ App.sendBtnMenu = (e) => {
       { icon: 'link', label: 'ارسال بدون پیش‌نمایش لینک', onClick: () => App.sendText({ no_preview: true }) },
     ], { anchor: el.sendBtn, up: true });
   }
-  App.recMode = App.recMode === 'round' ? 'voice' : 'round';
-  save('recMode', App.recMode);
-  App.updateSendBtn();
-  toast(App.recMode === 'round' ? 'حالت پیام ویدیویی' : 'حالت پیام صوتی');
+  Rec.toggleMode();
 };
 
 App.saveDraft = () => {
@@ -1399,11 +1419,11 @@ App.suggestStickers = () => {
 App.attachMenu = () => {
   const c = S.chats.get(S.active);
   UI.menu([
-    { icon: 'image', label: 'عکس یا ویدیو', onClick: () => { el.fileInput.accept = 'image/*,video/*'; el.fileInput.dataset.asFile = '0'; el.fileInput.click(); } },
-    { icon: 'file', label: 'فایل', onClick: () => { el.fileInput.accept = ''; el.fileInput.dataset.asFile = '1'; el.fileInput.click(); } },
-    { icon: 'camera', label: 'پیام ویدیویی', onClick: () => App.recordRound() },
-    c.type !== 'private' ? { icon: 'poll', label: 'نظرسنجی', onClick: () => App.pollDialog(c) } : null,
-  ], { anchor: el.attachBtn, up: true, alignStart: true });
+    { icon: 'oImage', label: 'عکس یا ویدیو', onClick: () => { el.fileInput.accept = 'image/*,video/*'; el.fileInput.dataset.asFile = '0'; el.fileInput.click(); } },
+    { icon: 'oFile', label: 'فایل', onClick: () => { el.fileInput.accept = ''; el.fileInput.dataset.asFile = '1'; el.fileInput.click(); } },
+    c.type !== 'private' ? { icon: 'oPoll', label: 'نظرسنجی', onClick: () => App.pollDialog(c) } : null,
+  ], { anchor: el.attachBtn, up: true, cls: 'attach-menu', onClose: () => el.attachBtn.classList.remove('open') });
+  el.attachBtn.classList.add('open');
 };
 
 /* ---------- uploads ---------- */
@@ -1488,81 +1508,6 @@ App.cancelPending = (localId) => {
 };
 
 /* ---------- voice recording (with a real waveform, like Telegram) ---------- */
-App.startRecording = async () => {
-  if (S.rec) return;
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast('مرورگر شما ضبط صدا را پشتیبانی نمی‌کند (HTTPS لازم است)');
-  let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { return toast('دسترسی به میکروفون داده نشد'); }
-  const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
-  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  const chunks = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  rec.start(250);
-  const chatId = S.active;
-  const levels = [];
-  let analyser = null, actx = null;
-  try {
-    actx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = actx.createAnalyser();
-    analyser.fftSize = 256;
-    actx.createMediaStreamSource(stream).connect(analyser);
-  } catch {}
-  S.rec = { rec, stream, chunks, start: Date.now(), chatId, replyTo: S.reply?.id || null, levels, actx };
-  const tm = h('span', { class: 'tm' }, fmtDur(0));
-  const live = h('div', { class: 'rec-wave' });
-  const ui = h('div', { class: 'rec-ui' }, h('span', { class: 'dot' }), tm, live, h('button', { class: 'cancel', type: 'button', onclick: () => App.stopRecording(false) }, 'لغو'));
-  el.row.hidden = true;
-  el.composer.append(ui);
-  S.rec.ui = ui;
-  const buf = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
-  S.rec.timer = setInterval(() => {
-    if (!S.rec) return;
-    tm.textContent = fmtDur((Date.now() - S.rec.start) / 1000);
-    if (analyser) {
-      analyser.getByteTimeDomainData(buf);
-      let peak = 0;
-      for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-      const lvl = Math.min(31, Math.round((peak / 128) * 31 * 1.6));
-      levels.push(lvl);
-      const bar = h('i');
-      bar.style.height = Math.max(2, lvl * 0.7) + 'px';
-      live.append(bar);
-      if (live.childNodes.length > 60) live.firstChild.remove();
-    }
-    lastTyping = 0;
-    if ((Date.now() - S.rec.start) % 4000 < 120) App.sendTyping('recording', true);
-  }, 100);
-  App.updateSendBtn();
-};
-App.stopRecording = (send) => {
-  const r = S.rec;
-  if (!r) return;
-  S.rec = null;
-  clearInterval(r.timer);
-  r.ui.remove();
-  if (el.row) el.row.hidden = false;
-  App.updateSendBtn();
-  const duration = (Date.now() - r.start) / 1000;
-  r.rec.onstop = () => {
-    r.stream.getTracks().forEach((t) => t.stop());
-    r.actx?.close?.();
-    if (!send || duration < 0.7 || r.chatId !== S.active) return;
-    const type = (r.rec.mimeType || 'audio/webm').split(';')[0];
-    const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
-    const file = new File([new Blob(r.chunks, { type })], `voice-${Date.now()}.${ext}`, { type });
-    // squeeze levels into 48 bars
-    const wf = [];
-    const n = 48;
-    for (let i = 0; i < n; i++) {
-      const slice = r.levels.slice(Math.floor((i * r.levels.length) / n), Math.floor(((i + 1) * r.levels.length) / n));
-      wf.push(slice.length ? Math.max(...slice) : 0);
-    }
-    App.upload(file, { voice: true, duration, replyTo: r.replyTo, meta: { waveform: r.levels.length ? wf : null } });
-    if (r.replyTo) { S.reply = null; App.renderComposerBar(); }
-  };
-  try { r.rec.stop(); } catch { r.stream.getTracks().forEach((t) => t.stop()); }
-};
-
 /* =====================================================================
    MESSAGE ACTIONS
    ===================================================================== */
@@ -1593,7 +1538,9 @@ App.messageMenu = (c, m, e, group) => {
     { icon: 'select', label: 'انتخاب', onClick: () => App.enterSelect(ids) },
     canDelete ? 'sep' : null,
     canDelete ? { icon: 'trash', label: 'حذف', danger: true, onClick: () => App.deleteMessages(ids) } : null,
-  ], { x: e.clientX, y: e.clientY, reactions });
+  ], { x: e.clientX, y: e.clientY, reactions, cls: 'msg-menu',
+    onClose: () => e.row?.classList.remove('menu-target') });
+  e.row?.classList.add('menu-target');
 };
 
 App.react = (m, emoji) => {

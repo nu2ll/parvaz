@@ -92,7 +92,7 @@ route('POST', '/api/me/2fa', async (ctx) => {
   return service.setTwofa(ctx.user, await body(ctx));
 });
 route('PATCH', '/api/me/privacy', async (ctx) => service.setPrivacy(ctx.user, await body(ctx)));
-route('GET', '/api/check-username', (ctx) => social.checkUsername(ctx.user, qp(ctx, 'username')));
+route('GET', '/api/check-username', (ctx) => social.checkUsername(ctx.user, qp(ctx, 'username'), qp(ctx, 'chat_id')));
 route('GET', '/api/sessions', (ctx) => ({ sessions: service.listSessions(ctx.user) }));
 route('DELETE', '/api/sessions/:id', (ctx) => service.terminateSession(ctx.user, ctx.params.id));
 route('POST', '/api/sessions/terminate-others', (ctx) => service.terminateOtherSessions(ctx.user));
