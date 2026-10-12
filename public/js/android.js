@@ -160,3 +160,119 @@ App.bindStoriesPull = () => {
     else if (e.deltaY > 0 && App.storiesState.open) App.setStoriesOpen(false);
   }, { passive: true });
 };
+
+/* =====================================================================
+   Root screens of the bottom bar (Telegram Android 12)
+   ===================================================================== */
+const rootHead = (title, ...actions) => h('div', { class: 'a-head' }, h('div', { class: 'a-title' }, h('span', { class: 'tx' }, title)), h('div', { class: 'sp' }), ...actions);
+
+/* ---------- contacts ---------- */
+App.buildContactsRoot = () => {
+  let byName = store('contactsSort', 'seen') === 'name';
+  const input = h('input', { type: 'search', placeholder: 'جستجوی مخاطبین', autocomplete: 'off' });
+  const list = h('div', { class: 'list' });
+  const caption = h('div', { class: 'section-title' });
+  const sortBtn = ibtn('oSort', 'ترتیب', () => { byName = !byName; save('contactsSort', byName ? 'name' : 'seen'); paint(); toast(byName ? 'مرتب بر اساس نام' : 'مرتب بر اساس آخرین بازدید'); });
+  const invite = () => {
+    const url = location.origin;
+    const text = `بیا تو کبوتر با هم گپ بزنیم! منو با @${S.me.username} پیدا کن: ${url}`;
+    if (navigator.share) navigator.share({ title: 'کبوتر', text, url }).catch(() => {});
+    else copyText(text, 'لینک دعوت کپی شد');
+  };
+  const paint = () => {
+    const q = input.value.trim().toLowerCase();
+    const items = (S.contacts || []).filter((u) => !q || userName(u).toLowerCase().includes(q) || u.username.toLowerCase().includes(q))
+      .sort(byName ? (a, b) => userName(a).localeCompare(userName(b), 'fa') : (a, b) => (b.online - a.online) || (b.last_seen || 0) - (a.last_seen || 0));
+    caption.textContent = byName ? 'مرتب شده بر اساس نام' : 'مرتب شده بر اساس آخرین بازدید';
+    list.replaceChildren(
+      q ? null : crow('invite', 'blue', 'دعوت از دوستان', null, invite, null, 'flat-row'),
+      q ? null : crow('phone', 'green', 'تماس‌های اخیر', null, () => App.openCalls(), null, 'flat-row'),
+      caption,
+      ...(items.length ? items.map((u) => {
+        const row = App.personRow(u, () => App.openPrivateWith(u.username), lastSeenText(u));
+        row.addEventListener('contextmenu', (e) => { e.preventDefault(); App.contactMenu(u, e, paint); });
+        UI.longPress(row, (e) => App.contactMenu(u, e, paint));
+        return row;
+      }) : [h('div', { class: 'empty-hint' }, S.contacts?.length ? 'کسی پیدا نشد' : 'هنوز مخاطبی ندارید.\nبا دکمه‌ی پایین کسی را با نام کاربری اضافه کنید.')]));
+  };
+  input.addEventListener('input', paint);
+  const root = h('div', { class: 'root root-contacts', hidden: true },
+    rootHead('مخاطبین', sortBtn),
+    h('div', { class: 'search-row' }, h('div', { class: 'search-box' }, icon('oSearch'), input)),
+    list,
+    h('div', { class: 'fabs' }, h('button', { class: 'fab', type: 'button', title: 'افزودن مخاطب', onclick: () => App.contactDialog(null, () => paint()) }, icon('personAdd'))));
+  App.rootPaint.contacts = () => { paint(); App.loadContacts(true).then(paint); };
+  paint();
+  return root;
+};
+App.contactMenu = (u, e, done) => UI.menu([
+  { icon: 'oChats', label: 'ارسال پیام', onClick: () => App.openPrivateWith(u.username) },
+  { icon: 'oEdit', label: 'ویرایش مخاطب', onClick: () => App.contactDialog(u, done) },
+  { icon: 'oTrash', label: 'حذف مخاطب', danger: true, onClick: () => App.removeContact(u).then(done) },
+], { x: e.clientX, y: e.clientY });
+// the icon set used by crow() is filled; add the two Android ones
+ICONS.invite = 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z';
+
+/* ---------- settings ---------- */
+App.buildSettingsRoot = () => {
+  const { body, paint } = App.settingsView();
+  const more = ibtn('more', 'بیشتر', (e) => App.settingsMoreMenu(e.currentTarget));
+  App.rootPaint.settings = paint;
+  return h('div', { class: 'root root-settings settings-tab main-settings', hidden: true }, rootHead('تنظیمات', more), h('div', { class: 'stab-body' }, body));
+};
+
+/* ---------- profile ---------- */
+App.buildProfileRoot = () => {
+  const body = h('div', { class: 'settings profile-root' });
+  let expanded = false;
+  const paint = () => {
+    const me = S.me;
+    const name = h('div', { class: 't', dir: 'auto' }, me.display_name, me.verified ? R.verified() : null);
+    const top = expanded && me.avatar
+      ? h('div', { class: 'info-photo settings-photo', onclick: () => { expanded = false; paint(); } }, h('img', { src: me.avatar, alt: '' }), h('div', { class: 'ip-over' }, name, h('div', { class: 'st' }, 'آنلاین')))
+      : h('div', { class: 'profile-top' }, h('div', { class: 'pt-av', onclick: (e) => (me.avatar ? ((expanded = true), paint()) : App.setProfilePhoto(e.currentTarget)) }, userAvatar(me, 's96')), name, h('div', { class: 'st' }, 'آنلاین'));
+    const action = (ic, label, fn) => h('button', { type: 'button', class: 'p-action', onclick: fn }, icon(ic), h('span', {}, label));
+    body.replaceChildren(top,
+      h('div', { class: 'p-actions' },
+        action('oSettings', 'تنظیمات', () => App.showRoot('settings')),
+        action('oEdit', 'ویرایش اطلاعات', () => App.settingsPage('profile')),
+        action('oCamera', me.avatar ? 'تغییر عکس' : 'تنظیم عکس', (e) => App.setProfilePhoto(e.currentTarget))),
+      UI.section(null, [
+        me.bio ? UI.row(null, me.bio, 'بیوگرافی', () => copyText(me.bio), 'multi') : UI.row(null, 'افزودن بیوگرافی', 'بیوگرافی', () => App.settingsPage('profile'), 'accent'),
+        UI.row(null, '@' + me.username, 'نام کاربری', () => copyText('@' + me.username), 'ltr-n'),
+      ]),
+      UI.section(null, [
+        crow('story', 'purple', 'استوری‌های من', null, () => Stories.openMine()),
+        crow('bookmark', 'blue', 'پیام‌های ذخیره‌شده', null, () => App.openSaved()),
+        crow('phone', 'green', 'تماس‌ها', null, () => App.openCalls()),
+      ]));
+  };
+  App.rootPaint.profile = paint;
+  paint();
+  const more = ibtn('more', 'بیشتر', (e) => App.settingsMoreMenu(e.currentTarget));
+  const share = ibtn('link', 'اشتراک‌گذاری پروفایل', () => copyText(`${location.origin}/#/@${S.me.username}`, 'لینک پروفایل کپی شد'));
+  return h('div', { class: 'root root-profile settings-tab main-settings', hidden: true }, h('div', { class: 'a-head' }, share, h('div', { class: 'sp' }), more), h('div', { class: 'stab-body' }, body));
+};
+
+/* ---------- new message (Android pencil FAB) ---------- */
+App.newMessageScreen = async () => {
+  const input = h('input', { type: 'search', placeholder: 'جستجوی مخاطبین', autocomplete: 'off' });
+  const list = h('div', { class: 'list' });
+  const paint = () => {
+    const q = input.value.trim().toLowerCase();
+    const items = (S.contacts || []).filter((u) => !q || userName(u).toLowerCase().includes(q) || u.username.toLowerCase().includes(q))
+      .sort((a, b) => (b.online - a.online) || (b.last_seen || 0) - (a.last_seen || 0));
+    list.replaceChildren(
+      q ? null : crow('group', 'blue', 'گروه جدید', null, () => App.newChatDialog('group'), null, 'flat-row'),
+      q ? null : crow('personAdd', 'green', 'مخاطب جدید', null, () => App.contactDialog(null, () => App.loadContacts(true).then(paint)), null, 'flat-row'),
+      q ? null : crow('channel', 'orange', 'کانال جدید', null, () => App.newChatDialog('channel'), null, 'flat-row'),
+      h('div', { class: 'section-title' }, 'مرتب شده بر اساس آخرین بازدید'),
+      ...items.map((u) => App.personRow(u, () => { App.side.pop(tab); App.openPrivateWith(u.username); }, lastSeenText(u))));
+    if (q && !items.length) list.append(h('div', { class: 'empty-hint' }, 'برای پیدا کردن هر کسی، نام کاربری‌اش را در جستجوی گفتگوها بنویسید'));
+  };
+  input.addEventListener('input', paint);
+  const tab = App.side.push({ title: 'پیام جدید', body: [h('div', { class: 'search-row' }, h('div', { class: 'search-box' }, icon('oSearch'), input)), list] });
+  paint();
+  await App.loadContacts(true);
+  paint();
+};

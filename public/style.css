@@ -1304,3 +1304,100 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 @media (pointer: coarse) { .ripple { opacity: .14; } }
 html, body { overscroll-behavior: none; }
 .list, .messages, .stab-body { overscroll-behavior-y: contain; }
+
+/* =====================================================================
+   v3.5: Telegram Android 12 shell (title + status, bottom bar, root tabs)
+   ===================================================================== */
+.avatar.s24 { width: 24px; height: 24px; font-size: 10px; }
+.avatar.s96 { width: 96px; height: 96px; font-size: 36px; }
+.stab.main { overflow: hidden; }
+.root { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--surface); }
+.root-in { animation: rootIn .26s cubic-bezier(.2,.9,.3,1) both; }
+@keyframes rootIn { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+
+/* header: [stories] کبوتر / «در حال اتصال…»   [search] [⋮] */
+.a-head { display: flex; align-items: center; gap: 6px; height: 64px; padding: 0 10px 0 6px; padding-inline: 16px 8px; flex: none; }
+.a-head .sp { flex: 1; }
+.a-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 24px; font-weight: 600; letter-spacing: -.2px; white-space: nowrap; }
+.a-title .tx { overflow: hidden; text-overflow: ellipsis; animation: fade .2s; }
+.a-title.busy { font-size: 19px; font-weight: 500; color: var(--text); }
+.a-title .spinner { width: 18px; height: 18px; border-width: 2.2px; border-color: var(--accent); border-top-color: transparent; }
+.a-head .ibtn { color: var(--text); }
+.a-head .search-ic { display: none; }
+.root-chats.search-collapsed:not(.stories-open) .a-head .search-ic { display: grid; animation: fade .2s; }
+.story-stack { position: static; height: 40px; padding: 0; margin-inline-end: 2px; display: flex; flex-direction: row; align-items: center; }
+.story-stack[hidden] { display: none; }
+.story-stack .ss { margin-inline-start: -14px; box-shadow: 0 0 0 2px var(--surface); }
+.story-stack .ss:first-child { margin-inline-start: 0; }
+.story-stack .ss .avatar { width: 34px; height: 34px; border-color: var(--surface); }
+.stories-open .story-stack, .stories-pulling .story-stack { width: 0; margin: 0; overflow: hidden; }
+.story-stack { transition: opacity .25s, width .3s; }
+.story-item .ring.none { background: transparent; }
+.story-item .plus { top: 40px; inset-inline-end: 2px; }
+
+/* search pill hides under the title once you scroll */
+.search-row { padding: 0 12px 8px; flex: none; max-height: 64px; overflow: hidden; transition: max-height .25s cubic-bezier(.2,.9,.3,1), padding .25s, opacity .2s; }
+.search-row .search-box input { height: 46px; border-radius: 23px; }
+.root-chats.search-collapsed .search-row { max-height: 0; padding-block: 0; opacity: 0; }
+.searching .root-chats .search-row { max-height: 64px; padding-block: 0 8px; opacity: 1; }
+.searching .root-chats .stories-bar, .searching .root-chats .story-stack, .searching .fabs { display: none !important; }
+.root-chats .list-wrap > .list, .root-contacts > .list { padding-bottom: 110px; }
+
+/* floating actions: small camera (story) above the new-message button */
+.fabs { position: absolute; bottom: 96px; inset-inline-end: 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; z-index: 6; transition: transform .25s, opacity .25s; }
+.fabs .fab, .fabs .fab-new { position: static; opacity: 1 !important; transform: none !important; width: 58px; height: 58px; }
+.fab-cam { width: 44px; height: 44px; border-radius: 50%; background: var(--float); color: var(--text); box-shadow: var(--float-shadow); display: grid; place-items: center; }
+.fab-cam .i { width: 22px; height: 22px; }
+.fab .i.o { width: 28px; height: 28px; stroke-width: 1.9; }
+.bottom-nav.hide ~ .fabs, .root[hidden] .fabs { opacity: 0; pointer-events: none; }
+
+/* bottom navigation pill */
+.bottom-nav { position: absolute; bottom: max(12px, env(safe-area-inset-bottom)); inset-inline: 14px; height: 66px; border-radius: 33px; z-index: 8;
+  background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow: 0 4px 24px rgba(0,0,0,.14), 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+  display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; padding: 5px; transition: transform .3s cubic-bezier(.2,.9,.3,1), opacity .25s; }
+.bottom-nav.hide { transform: translateY(140%); opacity: 0; pointer-events: none; }
+.bottom-nav .nb { height: 56px; border-radius: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--text);
+  font-size: 12.5px; font-weight: 500; position: relative; transition: background .25s, color .2s; }
+.bottom-nav .nb .i { width: 25px; height: 25px; }
+.bottom-nav .nb.on { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--accent); }
+.bottom-nav .nb.on .i { animation: navPop .35s cubic-bezier(.3,1.6,.6,1); }
+@keyframes navPop { 40% { transform: scale(1.18); } }
+.nb-ic { position: relative; display: grid; place-items: center; }
+.nb-badge { position: absolute; top: -7px; inset-inline-start: -14px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff;
+  font-size: 12px; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface); }
+.nb-av { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; }
+.nb.on .nb-av { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Android ⋮ menu: grouped with thick separators */
+.menu.main-menu .sep { height: 8px; margin: 4px 0; background: color-mix(in srgb, var(--text) 5%, transparent); }
+.menu.main-menu .menu-foot { font-size: 12px; padding: 8px 8px 2px; }
+
+/* contacts / new message rows */
+.set-row.flat-row { margin: 0 2px; }
+.root-contacts .section-title, .stab .list > .section-title { color: var(--accent); font-weight: 500; padding: 14px 12px 6px; }
+
+/* profile tab */
+.profile-root .profile-top { padding-top: 6px; }
+.profile-root .profile-top .pt-av { width: 96px; }
+.p-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px 14px; }
+.p-action { background: var(--surface); border-radius: 18px; padding: 12px 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
+.p-action .i { width: 26px; height: 26px; }
+.p-action:active { transform: scale(.97); }
+.root-settings > .stab-body, .root-profile > .stab-body { padding-bottom: 100px; }
+.root-profile, .root-settings { background: var(--bg-2); }
+.root-profile .a-head, .root-settings .a-head { background: var(--bg-2); }
+
+/* chat screen header as separate glass pills (Android 12) */
+@media (max-width: 760px) {
+  .chat-head { background: transparent !important; box-shadow: none !important; margin: 6px 8px 0; gap: 8px; padding: 0; height: 52px; }
+  .chat-head > .back, .chat-head .who, .chat-head .head-actions {
+    background: color-mix(in srgb, var(--float) 82%, transparent); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow: var(--float-shadow); border-radius: 26px; height: 50px; }
+  .chat-head > .back { width: 50px; flex: none; }
+  .chat-head .who { padding: 0 6px; padding-inline-end: 16px; gap: 10px; }
+  .chat-head .who .avatar { width: 38px; height: 38px; }
+  .chat-head .head-actions { display: flex; align-items: center; padding: 0 4px; flex: none; }
+}
+.head-actions { display: flex; align-items: center; gap: 2px; }
+.conn-st { color: var(--text-2) !important; }

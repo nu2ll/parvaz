@@ -144,7 +144,7 @@ App.setProfilePhoto = async (anchor) => {
     else { const f = await App.uploadPhoto(choice); S.me = (await api('PATCH', '/api/me', { avatar: f.id })).user; }
     toast(choice.remove ? 'عکس حذف شد' : 'عکس پروفایل تنظیم شد');
     App.renderSidebar();
-    App.settingsTab?.opts.onShow?.();
+    App.repaintMe();
   } catch (e) { toast(e.message); }
 };
 

@@ -136,63 +136,125 @@ App.start = async () => {
    ===================================================================== */
 App.buildShell = () => {
   const side = $('#sidebar');
-  el.search = h('input', { type: 'search', placeholder: 'جستجو', autocomplete: 'off', 'aria-label': 'جستجو' });
+  el.search = h('input', { type: 'search', placeholder: 'جستجوی گفتگوها', autocomplete: 'off', 'aria-label': 'جستجو' });
   el.list = h('div', { class: 'list' });
   el.folders = h('div', { class: 'folders', role: 'tablist' });
   el.storiesBar = h('div', { class: 'stories-bar', hidden: true });
-  el.conn = h('div', { class: 'conn' });
-  el.menuBtn = h('button', { class: 'ibtn menu-btn', type: 'button', title: 'منو', 'aria-label': 'منو', onclick: () => (App.searching() ? App.endSearch() : App.mainMenu()) },
-    h('span', { class: 'burger' }, h('i'), h('i'), h('i')));
+  el.conn = h('div', { class: 'conn' }); // kept for older code paths; status now lives in the title (Android)
+  el.menuBtn = ibtn('more', 'منو', (e) => App.mainMenu(e.currentTarget), 'menu-btn');
   el.lockBtn = ibtn('lock', 'قفل', () => Lock.lockNow(), 'lock-btn');
   el.lockBtn.hidden = !(typeof Lock !== 'undefined' && Lock.enabled());
-  el.fabNew = h('button', { class: 'fab fab-new', title: 'گفتگوی جدید', type: 'button', onclick: (e) => App.newMenu(e.currentTarget) }, icon('edit', 'fab-ic'), icon('close', 'fab-x'));
-  // Web K 2.2: when the list scrolls, stories fold into a small stack inside the search pill
+  el.searchIcon = ibtn('oSearch', 'جستجو', () => { el.rootChats.classList.remove('search-collapsed'); el.list.scrollTop = 0; el.search.focus(); }, 'search-ic');
+  el.fabNew = h('button', { class: 'fab fab-new', title: 'پیام جدید', type: 'button', onclick: () => App.newMessageScreen() }, icon('oNewMsg', 'fab-ic'));
+  el.fabCam = h('button', { class: 'fab-cam', title: 'استوری جدید', type: 'button', onclick: () => Stories.compose() }, icon('oCamera'));
+  // Android: story avatars fold next to the title
   el.storyStack = h('button', { class: 'story-stack', type: 'button', title: 'استوری‌ها', hidden: true, onclick: () => { el.list.scrollTop = 0; App.setStoriesOpen(true); } });
+  el.appTitle = h('div', { class: 'a-title' }, h('span', { class: 'tx' }, 'کبوتر'));
   el.listWrap = h('div', { class: 'list-wrap' }, el.folders, el.list);
-  el.mainTab = h('div', { class: 'stab main in' },
-    h('div', { class: 'side-head' }, el.menuBtn, h('div', { class: 'search-box' }, icon('oSearch'), el.search,
-      h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close')), el.storyStack), el.lockBtn),
-    el.conn, el.storiesBar, el.listWrap, el.fabNew);
+  el.searchRow = h('div', { class: 'search-row' }, h('div', { class: 'search-box' }, icon('oSearch'), el.search,
+    h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close'))));
+  el.rootChats = h('div', { class: 'root root-chats' },
+    h('div', { class: 'a-head' }, el.storyStack, el.appTitle, h('div', { class: 'sp' }), el.lockBtn, el.searchIcon, el.menuBtn),
+    el.storiesBar, el.searchRow, el.listWrap, h('div', { class: 'fabs' }, el.fabCam, el.fabNew));
+  el.bottomNav = App.buildNav();
+  el.mainTab = h('div', { class: 'stab main in' }, el.rootChats, el.bottomNav);
   side.replaceChildren(el.mainTab);
-  App.bindStoriesPull?.();
   App.side = new UI.Slider(side, el.mainTab);
+  // the bottom bar only lives on the root screens (Android)
+  const push = App.side.push.bind(App.side), pop = App.side.pop.bind(App.side);
+  App.side.push = (o) => { const r = push(o); App.updateNav(); return r; };
+  App.side.pop = (e) => { const r = pop(e); App.updateNav(); return r; };
+  App.bindStoriesPull?.();
   let t;
-  el.search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(App.renderSidebar, 200); side.classList.toggle('searching', App.searching()); });
-  el.search.addEventListener('focus', () => { side.classList.add('searching'); App.renderSidebar(); });
-  el.search.addEventListener('blur', () => setTimeout(() => side.classList.toggle('searching', App.searching()), 150));
+  el.search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(App.renderSidebar, 200); side.classList.toggle('searching', App.searching()); App.updateNav(); });
+  el.search.addEventListener('focus', () => { side.classList.add('searching'); App.updateNav(); App.renderSidebar(); });
+  el.search.addEventListener('blur', () => setTimeout(() => { side.classList.toggle('searching', App.searching()); App.updateNav(); }, 150));
   el.search.addEventListener('keydown', (e) => { if (e.key === 'Escape') App.endSearch(); });
+  // scrolling hides the search pill under the title (it comes back at the top / via the search icon)
+  el.list.addEventListener('scroll', () => { if (!App.searching()) el.rootChats.classList.toggle('search-collapsed', el.list.scrollTop > 40); }, { passive: true });
   App.buildChatArea();
   App.buildInfo();
 };
-App.version = () => String(S.config.version || '3.4.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+
+/* ---------- Android bottom navigation ---------- */
+App.nav = 'chats';
+App.buildNav = () => {
+  const item = (id, ic, label) => h('button', { type: 'button', class: 'nb' + (id === 'chats' ? ' on' : ''), dataset: { id }, onclick: () => App.showRoot(id) },
+    h('span', { class: 'nb-ic' }, ic, id === 'chats' ? h('span', { class: 'nb-badge', hidden: true }) : null), h('span', { class: 'nb-l' }, label));
+  el.navAvatar = h('span', { class: 'nb-av' });
+  return h('nav', { class: 'bottom-nav' },
+    item('chats', icon('oChats'), 'گفتگوها'),
+    item('contacts', icon('oUserCircle'), 'مخاطبین'),
+    item('settings', icon('oSettings'), 'تنظیمات'),
+    item('profile', el.navAvatar, 'پروفایل'));
+};
+App.updateNav = () => {
+  if (!el.bottomNav) return;
+  el.bottomNav.classList.toggle('hide', (App.side?.depth || 0) > 0 || (App.nav === 'chats' && App.searching()));
+  let n = 0;
+  for (const c of S.chats.values()) if (c.unread && !c.muted && !c.archived) n++;
+  const b = el.bottomNav.querySelector('.nb-badge');
+  if (b) { b.textContent = n > 99 ? '+۹۹' : fa(n); b.hidden = !n; }
+  if (el.navAvatar && S.me && el.navAvatar.dataset.v !== (S.me.avatar || '') + S.me.display_name) {
+    el.navAvatar.dataset.v = (S.me.avatar || '') + S.me.display_name;
+    el.navAvatar.replaceChildren(userAvatar(S.me, 's24'));
+  }
+};
+App.rootPaint = {};
+App.showRoot = (id) => {
+  if (App.side.depth) App.side.popAll();
+  if (App.searching()) App.endSearch();
+  if (App.nav === id) {
+    if (id === 'chats') { el.list.scrollTo?.({ top: 0, behavior: 'smooth' }); }
+    return;
+  }
+  App.nav = id;
+  const roots = { chats: el.rootChats };
+  if (id !== 'chats' && !el['root_' + id]) {
+    const r = { contacts: App.buildContactsRoot, settings: App.buildSettingsRoot, profile: App.buildProfileRoot }[id]();
+    el['root_' + id] = r;
+    el.mainTab.insertBefore(r, el.bottomNav);
+  }
+  for (const k of ['contacts', 'settings', 'profile']) roots[k] = el['root_' + k];
+  for (const [k, node] of Object.entries(roots)) {
+    if (!node) continue;
+    const on = k === id;
+    node.hidden = !on;
+    if (on) { node.classList.remove('root-in'); void node.offsetWidth; node.classList.add('root-in'); App.rootPaint[k]?.(); }
+  }
+  $$('.nb', el.bottomNav).forEach((b) => b.classList.toggle('on', b.dataset.id === id));
+  App.updateNav();
+};
+App.repaintMe = () => {
+  App.settingsTab?.opts.onShow?.();
+  for (const f of Object.values(App.rootPaint)) try { f(); } catch {}
+  App.updateNav();
+};
+
+App.version = () => String(S.config.version || '3.5.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 App.searching = () => !!el.search?.value.trim() || document.activeElement === el.search;
 App.endSearch = () => { el.search.value = ''; el.search.blur(); $('#sidebar').classList.remove('searching'); App.renderSidebar(); };
 
-// Web K 2.2 main menu: account, saved/archive/stories/contacts, settings, "More ›" submenu
-App.mainMenu = () => {
-  const me = S.me;
+// Telegram Android ⋮ menu
+App.mainMenu = (anchor = el.menuBtn) => {
   const archived = App.sortedChats(true);
   const archivedUnread = archived.filter((c) => c.unread).length;
-  el.menuBtn.classList.add('open');
   UI.menu([
-    { avatar: h('span', { class: 'acc-ring' }, userAvatar(me, 's32')), label: [me.display_name, me.verified ? R.verified() : null], onClick: () => App.openSettings() },
+    { icon: darkMode() ? 'oSun' : 'oMoon', label: darkMode() ? 'حالت روز' : 'حالت شب', onClick: () => setSetting('theme', darkMode() ? 'light' : 'dark') },
     'sep',
+    { icon: 'oGroup', label: 'گروه جدید', onClick: () => App.newChatDialog('group') },
+    { icon: 'oChannel', label: 'کانال جدید', onClick: () => App.newChatDialog('channel') },
     { icon: 'oBookmark', label: 'پیام‌های ذخیره‌شده', onClick: () => App.openSaved() },
     archived.length ? { icon: 'oArchive', label: 'گفتگوهای بایگانی‌شده', badge: archivedUnread ? fa(archivedUnread) : null, onClick: () => App.openArchive() } : null,
     { icon: 'oStories', label: 'استوری‌های من', onClick: () => Stories.openMine() },
-    { icon: 'oUser', label: 'مخاطبین', onClick: () => App.openContacts() },
+    { icon: 'oPhone', label: 'تماس‌ها', onClick: () => App.openCalls() },
     'sep',
-    { icon: 'oSettings', label: 'تنظیمات', onClick: () => App.openSettings() },
-    { icon: 'more', label: 'بیشتر', foot: `کبوتر وب ${App.version()}`, submenu: () => [
-      { icon: darkMode() ? 'oSun' : 'oMoon', label: darkMode() ? 'غیرفعال کردن حالت شب' : 'فعال کردن حالت شب', onClick: () => setSetting('theme', darkMode() ? 'light' : 'dark') },
-      { icon: 'oAnim', label: S.settings.animations === false ? 'فعال کردن انیمیشن‌ها' : 'غیرفعال کردن انیمیشن‌ها', onClick: () => setSetting('animations', S.settings.animations === false) },
-      'sep',
-      { icon: 'oPhone', label: 'تماس‌ها', onClick: () => App.openCalls() },
-      typeof Lock !== 'undefined' && Lock.enabled() ? { icon: 'oLock', label: 'قفل کردن', onClick: () => Lock.lockNow() } : null,
-      App.installPrompt ? { icon: 'oInstall', label: 'نصب برنامه', onClick: () => { App.installPrompt.prompt(); App.installPrompt = null; } } : null,
-      { icon: 'oHelp', label: 'امکانات کبوتر', onClick: () => App.openByUsername('kabootar') },
-    ] },
-  ], { anchor: el.menuBtn, cls: 'main-menu', onClose: () => el.menuBtn.classList.remove('open') });
+    typeof Lock !== 'undefined' && Lock.enabled() ? { icon: 'oLock', label: 'قفل کردن', onClick: () => Lock.lockNow() } : null,
+    App.installPrompt ? { icon: 'oInstall', label: 'نصب برنامه', onClick: () => { App.installPrompt.prompt(); App.installPrompt = null; } } : null,
+    { icon: 'oHelp', label: 'امکانات کبوتر', onClick: () => App.openByUsername('kabootar') },
+  ], { anchor, cls: 'main-menu', onClose: () => anchor.classList.remove('open') });
+  anchor.classList.add('open');
+  $('.menu.main-menu')?.append(h('div', { class: 'menu-foot' }, `کبوتر وب ${App.version()}`));
 };
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); App.installPrompt = e; });
 
@@ -327,6 +389,7 @@ App.paintBackBadge = () => {
 };
 App.updateTitle = () => {
   App.paintBackBadge();
+  App.updateNav?.();
   let n = 0;
   for (const c of S.chats.values()) if (c.unread && !c.muted) n++;
   document.title = n ? `(${fa(n)}) کبوتر` : 'کبوتر';
@@ -790,9 +853,11 @@ App.renderHeader = (c = S.chats.get(S.active)) => {
       h('div', { class: 'wt' },
         h('div', { class: 't', dir: 'auto' }, h('span', { class: 'tt' }, title), !t && c.verified ? R.verified() : null, c.muted ? icon('muted', 'mute-ic') : null),
         status ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, status, st.typing ? R.typingDots() : null) : null)),
-    canCall ? ibtn('phone', 'تماس', () => App.startCall(c, false), 'call-btn') : null,
-    ibtn('search', 'جستجو در گفتگو', () => App.openChatSearch()),
-    el.moreBtn);
+    h('div', { class: 'head-actions' },
+      canCall ? ibtn('phone', 'تماس', () => App.startCall(c, false), 'call-btn') : null,
+      ibtn('search', 'جستجو در گفتگو', () => App.openChatSearch()),
+      el.moreBtn));
+  if (App.connState && el.appTitle?.classList.contains('busy')) App.setConn(App.connState);
 };
 
 App.headerMenu = (c, anchor) => {
@@ -1671,16 +1736,26 @@ App.searchInChat = (q) => { if (S.active) App.openChatSearch(q); };
    REALTIME
    ===================================================================== */
 // Web K style connection status: a thin bar under the search, shown only if the problem lasts
+// Android: connection problems replace the "کبوتر" title (and the chat's status line)
 App.setConn = (state) => {
   App.connState = state;
   clearTimeout(App.connTimer);
-  if (!el.conn) return;
-  if (!state) { el.conn.classList.remove('show'); return; }
+  const paint = (text) => {
+    if (el.appTitle) el.appTitle.replaceChildren(...(text ? [h('span', { class: 'spinner' }), h('span', { class: 'tx' }, text)] : [h('span', { class: 'tx' }, 'کبوتر')]));
+    el.appTitle?.classList.toggle('busy', !!text);
+    const st = el.head?.querySelector('.who .st');
+    if (text && st) { st.replaceChildren(text); st.classList.add('conn-st'); }
+    else if (!text && S.active && el.head?.querySelector('.conn-st')) App.renderHeader();
+  };
+  if (!state) { paint(null); clearInterval(App.pollTimer); App.pollTimer = null; return; }
   const text = { offline: 'منتظر شبکه…', connecting: 'در حال اتصال…', updating: 'در حال به‌روزرسانی…' }[state];
-  App.connTimer = setTimeout(() => {
-    el.conn.replaceChildren(h('span', { class: 'spinner' }), h('span', {}, text));
-    el.conn.classList.add('show');
-  }, state === 'updating' ? 600 : 1500);
+  App.connTimer = setTimeout(() => paint(text), state === 'updating' ? 600 : 1200);
+  // while the socket is down keep the list fresh over plain HTTP, so nothing needs a refresh
+  if (state !== 'updating' && !App.pollTimer) App.pollTimer = setInterval(() => {
+    if (S.wsReady || !S.token || document.hidden) return;
+    App.loadChats().catch(() => {});
+    if (S.active) App.loadInitial(S.active).then(() => { App.renderMessages(); }).catch(() => {});
+  }, 15000);
 };
 App.dropSocket = () => {
   const ws = S.ws;
@@ -1705,9 +1780,14 @@ App.connect = () => {
   S.ws = ws;
   App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
   // a socket that never becomes ready (captive portals, frozen proxies) is retried quickly
-  App.openTimer = setTimeout(() => { if (S.ws === ws && !S.wsReady) { App.dropSocket(); App.scheduleReconnect(500); } }, 10000);
+  App.openTimer = setTimeout(() => { if (S.ws === ws && !S.wsReady) { App.dropSocket(); App.scheduleReconnect(1000); } }, 25000);
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: S.token }));
-  ws.onmessage = (e) => { let ev; try { ev = JSON.parse(e.data); } catch { return; } App.onEvent(ev); };
+  ws.onmessage = (e) => {
+    App.lastRx = Date.now();
+    if (App.probeTimer) { clearTimeout(App.probeTimer); App.probeTimer = null; }
+    let ev; try { ev = JSON.parse(e.data); } catch { return; }
+    App.onEvent(ev);
+  };
   ws.onerror = () => {};
   ws.onclose = (e) => {
     if (S.ws !== ws) return;
@@ -1720,17 +1800,25 @@ App.connect = () => {
 };
 // Mobile browsers freeze background tabs and silently kill sockets. When the page comes back,
 // check the socket right away instead of waiting for a (frozen) timer: no refresh needed.
-App.probe = () => {
+App.probe = (force) => {
   if (!S.ws || !S.wsReady || App.probeTimer) return;
+  if (!force && Date.now() - (App.lastRx || 0) < 20000) return; // traffic seen recently: it's alive
   App.wsSend({ type: 'ping' });
-  App.probeTimer = setTimeout(() => { App.probeTimer = null; App.dropSocket(); App.connect(); }, 5000);
+  // a ping over a slow VPN can take a while; only give up after 15s of total silence
+  App.probeTimer = setTimeout(() => {
+    App.probeTimer = null;
+    if (Date.now() - (App.lastRx || 0) < 15000) return;
+    App.dropSocket();
+    App.connect();
+  }, 15000);
 };
 App.ensureConnected = () => {
   if (!S.token || !S.me || S.manualClose) return;
   const ws = S.ws;
   if (!ws || ws.readyState >= 2) { S.retry = 0; App.connect(); }
-  else if (ws.readyState === 1 && S.wsReady) App.probe();
+  else if (ws.readyState === 1 && S.wsReady) App.probe(document.visibilityState === 'visible' && Date.now() - (App.hiddenAt || Date.now()) > 30000);
 };
+document.addEventListener('visibilitychange', () => { if (document.hidden) App.hiddenAt = Date.now(); });
 window.addEventListener('online', () => { S.retry = 0; App.ensureConnected(); });
 window.addEventListener('offline', () => App.setConn('offline'));
 window.addEventListener('focus', () => App.ensureConnected());
@@ -1756,8 +1844,9 @@ App.onEvent = async (ev) => {
       S.retry = 0;
       clearTimeout(App.openTimer);
       S.me = ev.user;
+      App.lastRx = Date.now();
       App.setConn(S.everConnected ? 'updating' : null);
-      if (S.everConnected) {
+      if (S.everConnected) try {
         // resync everything that may have happened while we were offline
         for (const st of S.msgs.values()) st.stale = true;
         await App.loadChats().catch(() => {});
@@ -1771,7 +1860,7 @@ App.onEvent = async (ev) => {
         } else if (S.active) App.showEmpty();
         if (typeof Stories !== 'undefined') Stories.load();
         if (App.forumTab) App.loadTopics(App.forumTab.chatId).then(() => App.renderTopics(App.forumTab?.chatId)).catch(() => {});
-      }
+      } catch (err) { console.error('[resync]', err); }
       App.setConn(null);
       S.everConnected = true;
       break;
@@ -1856,7 +1945,7 @@ App.onEvent = async (ev) => {
     case 'me':
       S.me = ev.user;
       App.renderSidebar();
-      if (App.settingsTab && App.side.top() === App.settingsTab) App.settingsTab.opts.onShow?.();
+      App.repaintMe();
       for (const c of S.chats.values()) if (isSaved(c)) Object.assign(c.peer, ev.user);
       break;
     case 'scheduled':

@@ -10,7 +10,8 @@ const crow = (ic, color, label, sub, onClick, end, cls) => {
   r.prepend(h('span', { class: 'sq', style: { background: SQ[color] || color } }, icon(ic)));
   return r;
 };
-App.openSettings = (page) => {
+// the settings screen body, shared by the root tab (bottom bar) and the pushed page
+App.settingsView = () => {
   const body = h('div', { class: 'settings' });
   let expanded = false;
   let devices = null;
@@ -50,12 +51,18 @@ App.openSettings = (page) => {
   };
   paint();
   api('GET', '/api/sessions').then((r) => { devices = r.sessions.length; paint(); }).catch(() => {});
+  return { body, paint };
+};
+App.settingsMoreMenu = (anchor) => UI.menu([
+  { icon: 'oEdit', label: 'ویرایش پروفایل', onClick: () => App.settingsPage('profile') },
+  { icon: 'oLogout', label: 'خروج از حساب', danger: true, onClick: async () => { if (await UI.ask('خروج', 'از حساب خود خارج می‌شوید؟', 'خروج', true)) App.logout(false); } },
+], { anchor });
+App.openSettings = (page) => {
+  if (App.nav === 'settings' && !App.side.depth) { if (page) App.settingsPage(page); return null; }
+  const { body, paint } = App.settingsView();
   const tab = App.side.push({
     title: 'تنظیمات', body, cls: 'settings-tab main-settings',
-    actions: [ibtn('more', 'بیشتر', (e) => UI.menu([
-      { icon: 'oEdit', label: 'ویرایش پروفایل', onClick: () => App.settingsPage('profile') },
-      { icon: 'oLogout', label: 'خروج از حساب', danger: true, onClick: async () => { if (await UI.ask('خروج', 'از حساب خود خارج می‌شوید؟', 'خروج', true)) App.logout(false); } },
-    ], { anchor: e.currentTarget }))],
+    actions: [ibtn('more', 'بیشتر', (e) => App.settingsMoreMenu(e.currentTarget))],
     onShow: paint,
   });
   App.settingsTab = tab;
@@ -68,7 +75,8 @@ App.sessionsDialog = () => App.settingsPage('sessions');
 App.settingsPage = (page, arg) => {
   const builder = SETTINGS_PAGES[page];
   if (!builder) return;
-  if (!App.settingsTab || !App.side.stack.includes(App.settingsTab)) App.openSettings();
+  const onRoot = App.nav === 'settings' || App.nav === 'profile';
+  if (!onRoot && (!App.settingsTab || !App.side.stack.includes(App.settingsTab))) App.openSettings();
   return builder(arg);
 };
 

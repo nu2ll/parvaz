@@ -30,8 +30,10 @@ const Stories = {
     const items = [];
     const me = f.me;
     // Web K only shows your own circle when you have a live story (posting is in the menu → My Stories)
-    if (me) items.push(h('button', { type: 'button', class: 'story-item me', onclick: () => this.openEntry(me) },
-      h('span', { class: 'ring mine' }, userAvatar(S.me, 's54')), h('span', { class: 'nm' }, 'استوری من')));
+    // Android: "My story" is always first; a + badge when you have nothing live
+    items.push(h('button', { type: 'button', class: 'story-item me', onclick: () => (me ? this.openEntry(me) : this.compose()) },
+      h('span', { class: 'ring' + (me ? ' mine' : ' none') }, userAvatar(S.me, 's54')), !me ? h('span', { class: 'plus' }, icon('plus')) : null,
+      h('span', { class: 'nm' }, 'استوری من')));
     for (const e of f.users) {
       items.push(h('button', { type: 'button', class: 'story-item', onclick: () => this.openEntry(e) },
         h('span', { class: 'ring' + (e.unseen ? ' unseen' : ' seen') }, userAvatar(e.user, 's54')), h('span', { class: 'nm', dir: 'auto' }, userName(e.user).split(' ')[0])));
