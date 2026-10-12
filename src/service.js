@@ -17,25 +17,67 @@ const err = (status, code, message) => new HttpError(status, code, message);
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n) + '…' : s || '');
 const isManager = (m) => !!m && MANAGERS.has(m.role);
 
+// ---------- privacy ----------
+
+const PRIVACY_KEYS = ['last_seen', 'photo', 'bio', 'forwards', 'calls', 'groups'];
+const PRIVACY_VALUES = new Set(['everybody', 'contacts', 'nobody']);
+function privacyOf(u) {
+  let raw = u.privacy;
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = {}; } }
+  raw = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  for (const k of PRIVACY_KEYS) out[k] = PRIVACY_VALUES.has(raw[k]) ? raw[k] : 'everybody';
+  if (u.show_last_seen === 0 && !PRIVACY_VALUES.has(raw.last_seen)) out.last_seen = 'nobody';
+  return out;
+}
+// Does user `u` allow `viewerId` to see/do `key`? (blocked users get nothing)
+function allows(u, key, viewerId) {
+  if (!viewerId || viewerId === u.id) return true;
+  if (repo.isBlocked(u.id, viewerId)) return false;
+  const rule = privacyOf(u)[key];
+  if (rule === 'everybody') return true;
+  if (rule === 'contacts') return repo.isContact(u.id, viewerId) != null;
+  return false;
+}
+function storyVisible(s, viewerId) {
+  if (s.user_id === viewerId) return true;
+  if (repo.isBlocked(s.user_id, viewerId)) return false;
+  if (s.privacy === 'contacts') return repo.isContact(s.user_id, viewerId) != null;
+  return true;
+}
+function storiesSummary(u, viewerId) {
+  const list = repo.activeStories(u.id).filter((s) => storyVisible(s, viewerId));
+  if (!list.length) return null;
+  const unseen = viewerId === u.id ? 0 : list.filter((s) => !repo.storyViewed(s.id, viewerId)).length;
+  return { count: list.length, unseen, last_at: list.at(-1).created_at };
+}
+
 // ---------- views ----------
 
 function publicUser(u, viewerId) {
   if (!u) return null;
-  const hidden = viewerId !== u.id && u.show_last_seen === 0;
+  const self = viewerId === u.id;
+  const seen = allows(u, 'last_seen', viewerId);
+  const contactName = !self && viewerId ? repo.isContact(viewerId, u.id) : null;
   return {
     id: u.id,
     username: u.username,
     display_name: u.display_name,
-    bio: u.bio || '',
-    avatar: fileUrl(u.avatar_file),
-    online: hidden ? false : hub.isOnline(u.id),
-    last_seen: hidden ? null : u.last_seen ?? null,
-    last_seen_hidden: hidden,
+    bio: allows(u, 'bio', viewerId) ? u.bio || '' : '',
+    avatar: allows(u, 'photo', viewerId) ? fileUrl(u.avatar_file) : null,
+    online: seen ? hub.isOnline(u.id) : false,
+    last_seen: seen ? u.last_seen ?? null : null,
+    last_seen_hidden: !seen,
+    is_contact: contactName != null,
+    contact_name: contactName,
+    blocked: !self && viewerId ? repo.isBlocked(viewerId, u.id) : false,
+    stories: storiesSummary(u, viewerId),
   };
 }
 
 function selfUser(u) {
-  return { ...publicUser(u, u.id), show_last_seen: u.show_last_seen !== 0 };
+  const privacy = privacyOf(u);
+  return { ...publicUser(u, u.id), show_last_seen: privacy.last_seen !== 'nobody', privacy, twofa: !!repo.twofa(u.id)?.twofa_hash };
 }
 
 function reactionsView(messageId, viewerId) {
@@ -70,7 +112,9 @@ function formatMessage(r, viewerId) {
     media: r.file_id ? { id: r.file_id, url: fileUrl(r.file_id), mime: r.f_mime, size: r.f_size, name: r.f_name, ...parseMeta(r.meta) } : null,
     reply_to: r.reply_to ?? null,
     reply: null,
-    forward: r.fwd_name ? { from_name: r.fwd_name, from_chat: r.fwd_chat || null } : null,
+    topic_id: r.topic_id ?? null,
+    grouped_id: r.grouped_id || null,
+    forward: r.fwd_name ? { from_name: r.fwd_name, from_chat: r.fwd_chat || null, from_user_id: r.fwd_user_id || null } : null,
     reactions: reactionsView(r.id, viewerId),
     created_at: r.created_at,
     edited_at: r.edited_at ?? null,
@@ -92,6 +136,21 @@ function formatMessage(r, viewerId) {
     out.text = '';
   }
   if (r.kind === 'poll') out.poll = pollView(r, viewerId);
+  if (r.kind === 'sticker') {
+    const m = parseMeta(r.meta);
+    out.sticker = { id: m.sticker_id, pack_id: m.pack_id, emoji: m.emoji || '', url: m.url || fileUrl(r.file_id) };
+    out.media = null;
+  }
+  if (r.kind === 'call') { out.call = parseMeta(r.meta); out.media = null; }
+  if (r.kind === 'text' && r.meta) {
+    const m = parseMeta(r.meta);
+    if (m.story_id) {
+      const st = repo.storyById(m.story_id);
+      out.story = st
+        ? { id: st.id, user_id: st.user_id, kind: st.kind, url: fileUrl(st.file_id), expired: st.expires_at < Date.now() }
+        : { id: m.story_id, deleted: true };
+    }
+  }
   if (r.chat_type === 'channel') out.views = repo.views(r.chat_id, r.id);
   return out;
 }
@@ -103,12 +162,14 @@ function parseMeta(raw) {
 }
 
 // width/height let clients reserve space before an image loads; duration fixes webm voice notes
-function cleanMeta(m) {
-  if (!m || typeof m !== 'object') return null;
-  const out = {};
-  for (const [k, max] of [['width', 20000], ['height', 20000], ['duration', 86400]]) {
-    const n = Number(m[k]);
-    if (Number.isFinite(n) && n > 0 && n <= max) out[k] = Math.round(n * 10) / 10;
+function cleanMeta(m, extra = {}) {
+  const out = { ...extra };
+  if (m && typeof m === 'object') {
+    for (const [k, max] of [['width', 20000], ['height', 20000], ['duration', 86400]]) {
+      const n = Number(m[k]);
+      if (Number.isFinite(n) && n > 0 && n <= max) out[k] = Math.round(n * 10) / 10;
+    }
+    if (Array.isArray(m.waveform)) out.waveform = m.waveform.slice(0, 64).map((x) => Math.max(0, Math.min(31, Math.round(Number(x) || 0))));
   }
   return Object.keys(out).length ? JSON.stringify(out) : null;
 }
@@ -145,9 +206,10 @@ function buildChat(chat, userId) {
   if (chat.type === 'private') {
     const p = repo.userById(repo.otherMember(chat.id, userId) ?? userId); // chat with yourself = Saved Messages
     peer = publicUser(p, userId);
-    title = p.display_name;
+    title = peer.contact_name || p.display_name;
     avatar = peer.avatar;
   }
+  const forum = chat.type === 'group' && !!chat.is_forum;
   const last = repo.lastMessage(chat.id);
   const pinned = chat.pinned_message_id ? repo.messageById(chat.pinned_message_id) : null;
   const manager = isManager(me);
@@ -168,12 +230,19 @@ function buildChat(chat, userId) {
     pinned_at: me.pinned_at ?? null,
     pinned_message: pinned ? formatMessage(pinned, userId) : null,
     invite_token: manager ? chat.invite_token : null,
+    is_forum: forum,
     last_message: last ? formatMessage(last, userId) : null,
-    unread: repo.unreadCount(chat.id, userId, me.last_read_id),
+    unread: forum ? forumUnread(chat.id, userId) : repo.unreadCount(chat.id, userId, me.last_read_id),
     last_read_id: me.last_read_id,
     others_read_id: chat.type === 'channel' ? 0 : repo.othersReadMax(chat.id, userId),
     created_at: chat.created_at,
   };
+}
+
+function forumUnread(chatId, userId) {
+  let n = 0;
+  for (const tid of [0, ...repo.topics(chatId).map((t) => t.id)]) n += repo.topicUnread(chatId, tid, repo.topicRead(chatId, tid, userId), userId);
+  return n;
 }
 
 // ---------- realtime fan-out ----------
@@ -209,8 +278,10 @@ function broadcastPresence(userId) {
   }
 }
 
-function insertService(chatId, actorId, payload) {
-  return repo.insertMessage({ chat_id: chatId, sender_id: actorId, kind: 'service', text: JSON.stringify(payload) });
+function insertService(chatId, actorId, payload, topicId) {
+  const chat = repo.chatById(chatId);
+  const topic_id = chat && chat.is_forum ? topicId ?? 0 : null;
+  return repo.insertMessage({ chat_id: chatId, sender_id: actorId, kind: 'service', text: JSON.stringify(payload), topic_id });
 }
 
 // ---------- accounts ----------
@@ -234,8 +305,9 @@ async function register(body, meta) {
     if (/UNIQUE/i.test(e.message)) throw err(409, 'username_taken', 'This username is already taken');
     throw e;
   }
-  // everyone starts with Saved Messages
+  // everyone starts with Saved Messages and the built-in sticker packs
   openPrivate({ id }, username);
+  for (const pack of repo.builtinPacks()) repo.installPack(id, pack.id);
   return { token: auth.createSession(id, meta), user: selfUser(repo.userById(id)) };
 }
 
@@ -248,7 +320,69 @@ async function login(body, meta) {
     throw err(401, 'invalid_credentials', 'Wrong username or password');
   }
   if (!(await auth.verifyPassword(password, row.password_hash))) throw err(401, 'invalid_credentials', 'Wrong username or password');
+  const tf = repo.twofa(row.id);
+  if (tf?.twofa_hash) {
+    // Two-step verification: the account password alone is not enough.
+    const loginToken = crypto.randomBytes(24).toString('base64url');
+    pending2fa.set(loginToken, { userId: row.id, exp: Date.now() + 5 * 60_000, tries: 0 });
+    return { twofa_required: true, login_token: loginToken, hint: tf.twofa_hint || '' };
+  }
   return { token: auth.createSession(row.id, meta), user: selfUser(repo.userById(row.id)) };
+}
+
+const pending2fa = new Map();
+setInterval(() => { const now = Date.now(); for (const [k, p] of pending2fa) if (p.exp < now) pending2fa.delete(k); }, 60_000).unref();
+async function login2fa(body, meta) {
+  const key = typeof body.login_token === 'string' ? body.login_token : '';
+  const p = pending2fa.get(key);
+  if (!p || p.exp < Date.now()) { pending2fa.delete(key); throw err(401, 'login_expired', 'Login session expired, start again'); }
+  if (++p.tries > 5) { pending2fa.delete(key); throw err(429, 'rate_limited', 'Too many attempts'); }
+  const tf = repo.twofa(p.userId);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!tf?.twofa_hash || !(await auth.verifyPassword(password, tf.twofa_hash))) throw err(401, 'invalid_2fa', 'Wrong password');
+  pending2fa.delete(key);
+  return { token: auth.createSession(p.userId, meta), user: selfUser(repo.userById(p.userId)) };
+}
+
+function twofaStatus(user) {
+  const tf = repo.twofa(user.id);
+  return { enabled: !!tf?.twofa_hash, hint: tf?.twofa_hint || '' };
+}
+async function setTwofa(user, body) {
+  const tf = repo.twofa(user.id);
+  if (tf?.twofa_hash) {
+    const cur = typeof body.current_password === 'string' ? body.current_password : '';
+    if (!(await auth.verifyPassword(cur, tf.twofa_hash))) throw err(403, 'invalid_2fa', 'Wrong password');
+  }
+  const next = body.new_password;
+  if (next == null || next === '') {
+    if (!tf?.twofa_hash) throw v.bad('Two-step verification is not enabled');
+    repo.setTwofa(user.id, null, '');
+  } else {
+    if (typeof next !== 'string' || next.length < 1 || next.length > 128) throw v.bad('Password must be 1-128 characters');
+    const hint = body.hint == null ? '' : v.line(String(body.hint), 'hint', 64, true);
+    if (hint && hint === next) throw v.bad('Hint must not be the password');
+    repo.setTwofa(user.id, await auth.hashPassword(next), hint);
+  }
+  hub.sendToUser(user.id, { type: 'me', user: selfUser(repo.userById(user.id)) });
+  return twofaStatus(user);
+}
+
+function setPrivacy(user, body) {
+  if (!body || typeof body !== 'object') throw v.bad('privacy must be an object');
+  const cur = privacyOf(repo.userById(user.id));
+  for (const [k, val] of Object.entries(body)) {
+    if (!PRIVACY_KEYS.includes(k)) throw v.bad(`Unknown privacy key: ${k}`);
+    if (!PRIVACY_VALUES.has(val)) throw v.bad('Privacy value must be everybody, contacts or nobody');
+    cur[k] = val;
+  }
+  repo.setPrivacy(user.id, cur);
+  repo.updateUser(user.id, { show_last_seen: cur.last_seen === 'nobody' ? 0 : 1 });
+  const fresh = repo.userById(user.id);
+  hub.sendToUser(user.id, { type: 'me', user: selfUser(fresh) });
+  for (const id of repo.contactIds(user.id)) hub.sendToUser(id, { type: 'user', user: publicUser(fresh, id) });
+  broadcastPresence(user.id);
+  return { privacy: cur };
 }
 
 function requireOwnImage(userId, fileIdRaw) {
@@ -268,7 +402,10 @@ function updateProfile(user, body) {
     ensureNameFree(fields.username, { userId: user.id });
   }
   if (body.avatar !== undefined) fields.avatar_file = body.avatar === null ? null : requireOwnImage(user.id, body.avatar);
-  if (body.show_last_seen !== undefined) fields.show_last_seen = body.show_last_seen ? 1 : 0;
+  if (body.show_last_seen !== undefined) {
+    fields.show_last_seen = body.show_last_seen ? 1 : 0;
+    fields.privacy = JSON.stringify({ ...privacyOf(repo.userById(user.id)), last_seen: body.show_last_seen ? 'everybody' : 'nobody' });
+  }
   try {
     repo.updateUser(user.id, fields);
   } catch (e) {
@@ -289,6 +426,35 @@ async function changePassword(user, body) {
   repo.setPassword(user.id, await auth.hashPassword(next));
   terminateOtherSessions(user);
   return { ok: true };
+}
+
+// Synced per-account client settings (theme, chat background, text size, folders...).
+// Server only enforces shape/size; the client owns the meaning of each key.
+const SETTINGS_KEYS = new Set(['theme', 'background', 'text_size', 'send_key', 'folders', 'notify', 'sound', 'animations', 'stickers_recent', 'emoji_recent',
+  'accent', 'time_format', 'large_emoji', 'autoplay_gif', 'autoplay_video', 'auto_download', 'notify_private', 'notify_group', 'notify_channel',
+  'notify_preview', 'suggest_stickers', 'loop_stickers', 'bubble_radius', 'chat_list_two_line', 'stories_hidden', 'folders_sidebar']);
+function getSettings(user) {
+  return { settings: repo.getSettings(user.id) };
+}
+function updateSettings(user, body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw v.bad('settings must be an object');
+  const cur = repo.getSettings(user.id);
+  for (const [k, val] of Object.entries(body)) {
+    if (!SETTINGS_KEYS.has(k)) throw v.bad(`Unknown setting: ${k}`);
+    if (val === null) delete cur[k];
+    else cur[k] = val;
+  }
+  if (Array.isArray(cur.folders)) {
+    if (cur.folders.length > 20) throw v.bad('Up to 20 folders');
+    for (const f of cur.folders) {
+      if (!f || typeof f !== 'object' || typeof f.title !== 'string' || !f.title.trim() || f.title.length > 24) throw v.bad('Folder title must be 1-24 characters');
+    }
+  }
+  const json = JSON.stringify(cur);
+  if (json.length > 32 * 1024) throw v.bad('Settings too large');
+  repo.setSettings(user.id, cur);
+  hub.sendToUser(user.id, { type: 'settings', settings: cur });
+  return { settings: cur };
 }
 
 function listSessions(user) {
@@ -401,6 +567,7 @@ function createChat(user, type, body) {
   const username = body.username ? v.publicName(body.username) : null;
   if (username) ensureNameFree(username);
   const users = resolveUsers(body.usernames, user.id);
+  checkCanAdd(user.id, users);
   const chatId = repo.tx(() => {
     const now = Date.now();
     const id = repo.insertChat(type, title, description, username, null, user.id, now);
@@ -412,6 +579,12 @@ function createChat(user, type, body) {
   });
   pushChat(chatId);
   return buildChat(repo.chatById(chatId), user.id);
+}
+
+function checkCanAdd(adderId, users) {
+  for (const u of users) {
+    if (!allows(u, 'groups', adderId)) throw err(403, 'privacy_restricted', `@${u.username} does not allow being added to groups`);
+  }
 }
 
 const createGroup = (user, body) => createChat(user, 'group', body);
@@ -442,8 +615,19 @@ function updateChat(user, chatIdRaw, body) {
     next.avatar_file = body.avatar === null ? null : requireOwnImage(user.id, body.avatar);
     if (next.avatar_file !== chat.avatar_file) events.push({ action: next.avatar_file ? 'photo' : 'photo_removed' });
   }
+  let forumChanged = false;
+  if (body.is_forum !== undefined) {
+    if (chat.type !== 'group') throw v.bad('Topics are only available in groups');
+    next.is_forum = body.is_forum ? 1 : 0;
+    forumChanged = next.is_forum !== chat.is_forum;
+    if (forumChanged) events.push({ action: next.is_forum ? 'forum_on' : 'forum_off' });
+  }
   const ids = repo.tx(() => {
     repo.updateChat(chatId, next);
+    if (forumChanged) {
+      repo.setForum(chatId, next.is_forum);
+      if (next.is_forum) { repo.moveToGeneral(chatId); repo.seedGeneralReads(chatId); }
+    }
     return chat.type === 'group' ? events.map((e) => insertService(chatId, user.id, e)) : [];
   });
   ids.forEach((id) => emitMessage('message', id));
@@ -456,6 +640,7 @@ function addMembers(user, chatIdRaw, body) {
   const names = body.usernames ?? (body.username ? [body.username] : null);
   const users = resolveUsers(names, user.id).filter((u) => !repo.membership(chatId, u.id));
   if (!users.length) throw err(409, 'already_member', 'Everyone is already a member');
+  checkCanAdd(user.id, users);
   if (repo.memberCount(chatId) + users.length > config.limits.groupMembers) throw err(400, 'group_full', 'Member limit reached');
   const sid = repo.tx(() => {
     for (const u of users) repo.addMember(chatId, u.id, 'member');
@@ -590,7 +775,10 @@ function chatSettings(user, chatIdRaw, body) {
       repo.setArchived(chatId, user.id, false);
     } else if (!body.pinned) repo.setPinned(chatId, user.id, null);
   }
-  if (body.read) repo.markRead(chatId, user.id, repo.maxMessageId(chatId));
+  if (body.read) {
+    repo.markRead(chatId, user.id, repo.maxMessageId(chatId));
+    if (repo.chatById(chatId).is_forum) for (const tid of [0, ...repo.topics(chatId).map((t) => t.id)]) repo.markTopicRead(chatId, tid, user.id, repo.topicMax(chatId, tid));
+  }
   pushChat(chatId, [user.id]);
   return { chat: buildChat(repo.chatById(chatId), user.id) };
 }
@@ -608,7 +796,7 @@ function pinMessage(user, chatIdRaw, messageIdRaw) {
     if (!msg || msg.chat_id !== chatId || msg.kind === 'service') throw err(404, 'not_found', 'Message not found');
     sid = repo.tx(() => {
       repo.setPinnedMessage(chatId, msgId);
-      return chat.type !== 'channel' ? insertService(chatId, user.id, { action: 'pinned', message_id: msgId, text: truncate(msg.text, 60), kind: msg.kind }) : null;
+      return chat.type !== 'channel' ? insertService(chatId, user.id, { action: 'pinned', message_id: msgId, text: truncate(msg.text, 60), kind: msg.kind }, msg.topic_id) : null;
     });
   }
   if (sid) emitMessage('message', sid);
@@ -620,14 +808,18 @@ function pinMessage(user, chatIdRaw, messageIdRaw) {
 
 function history(user, chatIdRaw, q) {
   const chatId = v.id(chatIdRaw, 'chat_id');
-  requireMember(chatId, user.id);
+  const { chat } = requireMember(chatId, user.id);
   const limit = Math.min(Math.max(parseInt(q.limit, 10) || 50, 1), 100);
   const fmt = (rows) => rows.map((m) => formatMessage(m, user.id));
+  // forum groups: history of one topic (0 = General)
+  const topicId = chat.is_forum && q.topic != null && q.topic !== '' ? (String(q.topic) === '0' ? 0 : v.id(q.topic, 'topic')) : null;
+  const before = (b, n) => (topicId == null ? repo.messagesBefore(chatId, b, n) : repo.topicBefore(chatId, topicId, b, n));
+  const after = (a, n) => (topicId == null ? repo.messagesAfter(chatId, a, n) : repo.topicAfter(chatId, topicId, a, n));
   if (q.around) {
     const around = v.id(q.around, 'around');
     const half = Math.floor(limit / 2);
-    const older = repo.messagesBefore(chatId, around + 1, half + 1);
-    const newer = repo.messagesAfter(chatId, around, half + 1);
+    const older = before(around + 1, half + 1);
+    const newer = after(around, half + 1);
     return {
       messages: fmt([...older.slice(0, half).reverse(), ...newer.slice(0, half)]),
       has_more: older.length > half,
@@ -635,21 +827,43 @@ function history(user, chatIdRaw, q) {
     };
   }
   if (q.after) {
-    const rows = repo.messagesAfter(chatId, v.id(q.after, 'after'), limit + 1);
+    const rows = after(v.id(q.after, 'after'), limit + 1);
     return { messages: fmt(rows.slice(0, limit)), has_more: false, has_newer: rows.length > limit };
   }
-  const before = q.before ? v.id(q.before, 'before') : Number.MAX_SAFE_INTEGER;
-  const rows = repo.messagesBefore(chatId, before, limit + 1);
+  const beforeId = q.before ? v.id(q.before, 'before') : Number.MAX_SAFE_INTEGER;
+  const rows = before(beforeId, limit + 1);
   return { messages: fmt(rows.slice(0, limit).reverse()), has_more: rows.length > limit, has_newer: false };
 }
 
-function kindForFile(mime, voice, asFile) {
-  if (asFile) return isAudio(mime) && !voice ? 'audio' : 'file';
+function kindForFile(mime, o = {}) {
+  if (o.asFile) return isAudio(mime) && !o.voice ? 'audio' : 'file';
+  if (mime === 'image/gif') return 'gif';
   if (isImage(mime)) return 'photo';
-  if (isVideo(mime)) return 'video';
-  if (isAudio(mime)) return voice ? 'voice' : 'audio';
+  if (isVideo(mime)) return o.round ? 'video_note' : o.gif ? 'gif' : 'video';
+  if (isAudio(mime)) return o.voice ? 'voice' : 'audio';
   return 'file';
 }
+
+function checkPrivatePeer(chat, userId) {
+  if (chat.type !== 'private') return null;
+  const peerId = repo.otherMember(chat.id, userId);
+  if (!peerId) return null; // Saved Messages
+  if (repo.isBlocked(userId, peerId)) throw err(403, 'you_blocked', 'Unblock this user to send messages');
+  if (repo.isBlocked(peerId, userId)) throw err(403, 'blocked', 'This user restricted who can message them');
+  return peerId;
+}
+
+function resolveTopic(chat, membership, raw) {
+  if (!chat.is_forum) return null;
+  if (raw == null || raw === 0 || raw === '0') return 0;
+  const t = repo.topicById(v.id(raw, 'topic_id'));
+  if (!t || t.chat_id !== chat.id) throw err(404, 'topic_not_found', 'Topic not found');
+  if (t.closed && !isManager(membership)) throw err(403, 'topic_closed', 'This topic is closed');
+  return t.id;
+}
+
+const GROUP_RE = /^[A-Za-z0-9_-]{6,40}$/;
+const GROUPABLE = new Set(['photo', 'video', 'file', 'audio', 'gif']);
 
 function validReplyTo(raw, chatId) {
   if (raw == null) return null;
@@ -663,21 +877,40 @@ function sendMessage(user, body) {
   const chatId = v.id(body.chat_id, 'chat_id');
   const { chat, membership } = requireMember(chatId, user.id);
   if (!canPost(chat, membership)) throw err(403, 'forbidden', 'Only admins can post in this channel');
-  const msg = { chat_id: chatId, sender_id: user.id, reply_to: validReplyTo(body.reply_to, chatId) };
-  if (body.poll) {
+  const peerId = checkPrivatePeer(chat, user.id);
+  const msg = { chat_id: chatId, sender_id: user.id, reply_to: validReplyTo(body.reply_to, chatId), topic_id: resolveTopic(chat, membership, body.topic_id) };
+  if (body.sticker_id != null) {
+    const st = repo.stickerById(v.id(body.sticker_id, 'sticker_id'));
+    if (!st) throw err(404, 'sticker_not_found', 'Sticker not found');
+    const meta = { sticker_id: st.id, pack_id: st.pack_id, emoji: st.emoji, url: st.url || fileUrl(st.file_id) };
+    Object.assign(msg, { kind: 'sticker', file_id: st.file_id || null, text: '', meta: JSON.stringify(meta) });
+  } else if (body.poll) {
     if (chat.type === 'private') throw v.bad('Polls are available in groups and channels');
     const poll = v.poll(body.poll);
     Object.assign(msg, { kind: 'poll', text: poll.question, poll: JSON.stringify(poll) });
   } else if (body.file_id) {
     const f = repo.fileById(v.fileId(body.file_id));
-    if (!f || f.owner_id !== user.id) throw err(404, 'file_not_found', 'File not found');
-    Object.assign(msg, { kind: kindForFile(f.mime, !!body.voice, !!body.as_file), file_id: f.id, text: v.caption(body.text), meta: cleanMeta(body.meta) });
+    // your own uploads, or (for GIFs) anything you can already see, e.g. a saved GIF
+    const reusable = body.gif && f && (repo.fileVisible(user.id, f.id) || repo.savedGifs(user.id).some((g) => g.file_id === f.id));
+    if (!f || (f.owner_id !== user.id && !reusable)) throw err(404, 'file_not_found', 'File not found');
+    const kind = kindForFile(f.mime, { voice: !!body.voice, asFile: !!body.as_file, gif: !!body.gif, round: !!body.video_note });
+    const spoiler = body.spoiler && (kind === 'photo' || kind === 'video' || kind === 'gif') ? { spoiler: true } : {};
+    let meta = cleanMeta(body.meta, spoiler);
+    if (!meta && kind === 'gif' && f.owner_id !== user.id) meta = cleanMeta(repo.gifMeta(f.id));
+    const grouped = body.grouped_id != null && GROUPABLE.has(kind) && GROUP_RE.test(String(body.grouped_id)) ? String(body.grouped_id) : null;
+    Object.assign(msg, { kind, file_id: f.id, text: v.caption(body.text), meta, grouped_id: grouped });
   } else {
     Object.assign(msg, { kind: 'text', text: v.messageText(body.text) });
+    if (body.story_id != null) {
+      const st = repo.storyById(v.id(body.story_id, 'story_id'));
+      if (!st || st.user_id !== peerId || !storyVisible(st, user.id)) throw err(404, 'story_not_found', 'Story not found');
+      msg.meta = JSON.stringify({ story_id: st.id });
+    }
   }
   const id = repo.tx(() => {
     const id = repo.insertMessage(msg);
     repo.markRead(chatId, user.id, id); // your own messages count as read
+    if (msg.topic_id != null) repo.markTopicRead(chatId, msg.topic_id, user.id, id);
     return id;
   });
   emitMessage('message', id);
@@ -689,6 +922,9 @@ function forwardMessages(user, body) {
   const ids = v.ids(body.message_ids, 'message_ids').sort((a, b) => a - b);
   const target = requireMember(toId, user.id);
   if (!canPost(target.chat, target.membership)) throw err(403, 'forbidden', 'You cannot post in this chat');
+  checkPrivatePeer(target.chat, user.id);
+  const toTopic = resolveTopic(target.chat, target.membership, body.to_topic_id);
+  const groups = new Map();
   const sources = ids.map((id) => {
     const m = repo.rawMessage(id);
     if (!m || !repo.membership(m.chat_id, user.id) || m.kind === 'service') throw err(404, 'not_found', 'Message not found');
@@ -697,13 +933,24 @@ function forwardMessages(user, body) {
   const newIds = repo.tx(() =>
     sources.map((m) => {
       const sender = repo.userById(m.sender_id);
+      const saved = m.chat_type === 'private' && m.sender_id === user.id && m.fwd_name == null && repo.otherMember(m.chat_id, user.id) == null;
       const fromName = m.fwd_name || (m.chat_type === 'channel' ? m.chat_title : sender.display_name);
       const fromChat = m.fwd_name ? m.fwd_chat : m.chat_type === 'channel' ? m.chat_title : null;
+      // the original author can hide the link to their account (privacy: forwards)
+      const fromUser = m.fwd_name ? m.fwd_user_id : m.chat_type !== 'channel' && allows(sender, 'forwards', user.id) ? sender.id : null;
+      let grouped = null;
+      if (m.grouped_id) {
+        if (!groups.has(m.grouped_id)) groups.set(m.grouped_id, crypto.randomBytes(8).toString('hex'));
+        grouped = groups.get(m.grouped_id);
+      }
+      const keepPlain = m.kind === 'sticker' || saved; // stickers and your own saved notes are re-sent, not "forwarded"
       const id = repo.insertMessage({
-        chat_id: toId, sender_id: user.id, kind: m.kind, text: m.text, file_id: m.file_id, poll: m.poll, meta: m.meta,
-        fwd_name: fromName, fwd_chat: fromChat,
+        chat_id: toId, sender_id: user.id, kind: m.kind, text: m.text, file_id: m.file_id, poll: m.poll, meta: m.kind === 'text' ? null : m.meta,
+        fwd_name: keepPlain ? null : fromName, fwd_chat: keepPlain ? null : fromChat, fwd_user_id: keepPlain ? null : fromUser,
+        topic_id: toTopic, grouped_id: grouped,
       });
       repo.markRead(toId, user.id, id);
+      if (toTopic != null) repo.markTopicRead(toId, toTopic, user.id, id);
       return id;
     })
   );
@@ -722,7 +969,7 @@ function loadVisibleMessage(user, messageIdRaw) {
 function editMessage(user, messageIdRaw, textRaw) {
   const { id, msg } = loadVisibleMessage(user, messageIdRaw);
   if (msg.sender_id !== user.id) throw err(403, 'forbidden', 'You can only edit your own messages');
-  if (msg.kind === 'service' || msg.kind === 'poll') throw v.bad('This message cannot be edited');
+  if (['service', 'poll', 'sticker', 'call', 'video_note', 'voice'].includes(msg.kind)) throw v.bad('This message cannot be edited');
   if (msg.fwd_name) throw v.bad('Forwarded messages cannot be edited');
   if (Date.now() - msg.created_at > EDIT_WINDOW_MS) throw err(403, 'edit_window_expired', 'Messages can only be edited for 48 hours');
   const text = msg.kind === 'text' ? v.messageText(textRaw) : v.caption(textRaw);
@@ -781,11 +1028,24 @@ function vote(user, messageIdRaw, optionRaw) {
   return formatMessage(repo.messageById(id), user.id);
 }
 
-function markRead(user, chatIdRaw, messageIdRaw) {
+function markRead(user, chatIdRaw, messageIdRaw, topicRaw) {
   const chatId = v.id(chatIdRaw, 'chat_id');
   const messageId = v.id(messageIdRaw, 'message_id');
   const { chat, membership } = requireMember(chatId, user.id);
   const target = Math.min(messageId, repo.maxMessageId(chatId));
+  if (chat.is_forum) {
+    let topicId = topicRaw != null && topicRaw !== '' ? (String(topicRaw) === '0' ? 0 : v.id(topicRaw, 'topic_id')) : null;
+    if (topicId == null) topicId = repo.rawMessage(target)?.topic_id ?? 0;
+    const tTarget = Math.min(messageId, repo.topicMax(chatId, topicId));
+    if (tTarget > repo.topicRead(chatId, topicId, user.id)) {
+      repo.markTopicRead(chatId, topicId, user.id, tTarget);
+      repo.markRead(chatId, user.id, tTarget);
+      hub.sendToUser(user.id, { type: 'topic_read', chat_id: chatId, topic_id: topicId, message_id: tTarget });
+      emitToChat(chatId, { type: 'read', chat_id: chatId, user_id: user.id, message_id: tTarget, topic_id: topicId }, user.id);
+      pushChat(chatId, [user.id]);
+    }
+    return { last_read_id: tTarget };
+  }
   if (target > membership.last_read_id) {
     repo.markRead(chatId, user.id, target);
     const event = { type: 'read', chat_id: chatId, user_id: user.id, message_id: target };
@@ -796,13 +1056,15 @@ function markRead(user, chatIdRaw, messageIdRaw) {
   return { last_read_id: Math.max(target, membership.last_read_id) };
 }
 
-const ACTIONS = new Set(['typing', 'recording', 'uploading']);
-function typing(user, chatIdRaw, actionRaw) {
+const ACTIONS = new Set(['typing', 'recording', 'uploading', 'recording_round', 'choosing_sticker']);
+function typing(user, chatIdRaw, actionRaw, topicRaw) {
   const chatId = v.id(chatIdRaw, 'chat_id');
   const { chat, membership } = requireMember(chatId, user.id);
   if (!canPost(chat, membership) || chat.type === 'channel') return;
+  if (chat.type === 'private' && repo.otherMember(chatId, user.id) && repo.isBlocked(repo.otherMember(chatId, user.id), user.id)) return;
   const action = ACTIONS.has(actionRaw) ? actionRaw : 'typing';
-  emitToChat(chatId, { type: 'typing', chat_id: chatId, action, user: { id: user.id, display_name: user.display_name } }, user.id);
+  const topic_id = chat.is_forum ? Number(topicRaw) || 0 : null;
+  emitToChat(chatId, { type: 'typing', chat_id: chatId, topic_id, action, user: { id: user.id, display_name: user.display_name } }, user.id);
 }
 
 function searchInChat(user, chatIdRaw, qRaw) {
@@ -814,18 +1076,21 @@ function searchInChat(user, chatIdRaw, qRaw) {
   return { messages: repo.searchInChat(chatId, q).map((m) => formatMessage(m, user.id)) };
 }
 
-const MEDIA_TYPES = { media: ['photo', 'video'], file: ['file', 'audio'], voice: ['voice'] };
+const MEDIA_TYPES = { media: ['photo', 'video'], file: ['file'], music: ['audio'], voice: ['voice', 'video_note'], gif: ['gif'] };
 function chatMedia(user, chatIdRaw, typeRaw, beforeRaw) {
   const chatId = v.id(chatIdRaw, 'chat_id');
   requireMember(chatId, user.id);
-  const kinds = MEDIA_TYPES[typeRaw] || MEDIA_TYPES.media;
   const before = beforeRaw ? v.id(beforeRaw, 'before') : Number.MAX_SAFE_INTEGER;
+  if (typeRaw === 'link') return { messages: repo.linksInChat(chatId, before, 60).map((m) => formatMessage(m, user.id)) };
+  const kinds = MEDIA_TYPES[typeRaw] || MEDIA_TYPES.media;
   return { messages: repo.mediaInChat(chatId, kinds, before, 60).map((m) => formatMessage(m, user.id)) };
 }
 
 module.exports = {
-  REACTIONS, publicUser, selfUser, formatMessage, broadcastPresence,
-  register, login, updateProfile, changePassword, listSessions, terminateSession, terminateOtherSessions,
+  REACTIONS, publicUser, selfUser, formatMessage, broadcastPresence, privacyOf, allows, storyVisible, emitMessage, pushChat, emitToChat,
+  requireMember, isManager, insertService, checkPrivatePeer, forumUnread,
+  login2fa, twofaStatus, setTwofa, setPrivacy,
+  register, login, updateProfile, changePassword, listSessions, getSettings, updateSettings, terminateSession, terminateOtherSessions,
   search, resolve,
   listChats, chatDetails, openPrivate, createGroup, createChannel, updateChat, addMembers, removeMember, setRole,
   leaveChat, deleteChat, inviteLink, joinPreview, join, chatSettings, pinMessage,

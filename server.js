@@ -27,7 +27,7 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
-  'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
+  'Permissions-Policy': 'camera=(self), microphone=(self), display-capture=(self), geolocation=()',
 };
 
 function serveStatic(req, res, pathname) {
@@ -69,6 +69,7 @@ function createServer() {
         const ctx = { req, res, url, params: m.params, ip: clientIp(req) };
         if (!m.route.public) ctx.user = auth.authenticate(req, ctx.ip);
         const result = await m.route.handler(ctx);
+        if (m.route.raw && res.headersSent) return;
         return sendJson(res, m.route.status || 200, result ?? { ok: true });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method_not_allowed', 'Method not allowed');
@@ -98,6 +99,7 @@ function createServer() {
 }
 
 function start(port = config.port, host = config.host) {
+  require('./src/stickers').seedBuiltin();
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once('error', reject);

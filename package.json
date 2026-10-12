@@ -1,13 +1,13 @@
 {
   "name": "kabootar",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Telegram-style messenger: server + web client, zero dependencies.",
   "main": "server.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
     "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
-    "test": "node --disable-warning=ExperimentalWarning test/smoke.js && node --disable-warning=ExperimentalWarning test/ui.js",
+    "test": "node --disable-warning=ExperimentalWarning test/smoke.js && node --disable-warning=ExperimentalWarning test/ui.js && node test/features.js",
     "test:api": "node --disable-warning=ExperimentalWarning test/smoke.js",
     "test:ui": "node --disable-warning=ExperimentalWarning test/ui.js"
   },

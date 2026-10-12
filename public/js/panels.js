@@ -1,83 +1,205 @@
 'use strict';
-/* Kabootar web client — dialogs and side panels. */
+/* Kabootar web client — panels: new chat flows, contacts, calls, dialogs, info column (Web K right sidebar). */
 
 /* ---------- user picker (search + multi-select chips) ---------- */
-function userPicker({ multiple = true, onPick } = {}) {
+function userPicker({ multiple = true, onPick, onChange, exclude = new Set() } = {}) {
   const selected = new Map();
   const chips = h('div', { class: 'chips' });
-  const input = h('input', { type: 'search', placeholder: 'جستجوی نام یا @نام‌کاربری', autocomplete: 'off' });
-  const field = h('label', { class: 'field' }, input, h('span', {}, multiple ? 'افزودن افراد' : 'جستجو'));
-  const results = h('div');
+  const input = h('input', { type: 'search', placeholder: multiple ? 'افزودن افراد…' : 'جستجوی نام یا @نام‌کاربری', autocomplete: 'off' });
+  const field = h('div', { class: 'picker-input' }, chips, input);
+  const results = h('div', { class: 'picker-list' });
   const paintChips = () => {
-    chips.replaceChildren(...[...selected.values()].map((u) => h('span', { class: 'chip' }, userAvatar(u), u.display_name,
-      h('button', { type: 'button', onclick: () => { selected.delete(u.id); paintChips(); paint(lastList); } }, icon('close')))));
+    chips.replaceChildren(...[...selected.values()].map((u) => h('span', { class: 'chip' }, userAvatar(u), h('span', { dir: 'auto' }, userName(u)),
+      h('button', { type: 'button', onclick: () => { selected.delete(u.id); paintChips(); paint(lastList); onChange && onChange(selected); } }, icon('close')))));
   };
   let lastList = [];
   const paint = (users) => {
-    lastList = users;
-    results.replaceChildren(...(users.length ? users.map((u) => {
+    lastList = users.filter((u) => !exclude.has(u.id));
+    results.replaceChildren(...(lastList.length ? lastList.map((u) => {
       const row = h('div', { class: 'pick' + (selected.has(u.id) ? ' sel' : ''), onclick: () => {
         if (!multiple) return onPick && onPick(u);
         selected.has(u.id) ? selected.delete(u.id) : selected.set(u.id, u);
-        paintChips(); paint(lastList);
-      } }, userAvatar(u, 's40'),
-      h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, u.display_name), h('div', { class: 's' + (u.online ? ' accent' : ''), dir: 'ltr' }, '@' + u.username + ' · ' + lastSeenText(u))),
-      multiple ? h('span', { class: 'check' }, icon('check')) : null);
+        paintChips(); paint(lastList); onChange && onChange(selected);
+        input.value = ''; input.focus();
+      } }, multiple ? h('span', { class: 'checkbox round' + (selected.has(u.id) ? ' on' : '') }, icon('check')) : null, userAvatar(u, 's42'),
+      h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, userName(u)), h('div', { class: 's' + (u.online ? ' accent' : ''), dir: 'auto' }, lastSeenText(u))));
       return row;
     }) : [h('div', { class: 'info-empty' }, input.value.trim() ? 'کسی پیدا نشد' : 'نام کسی را جستجو کنید')]));
   };
-  // suggestions: people you already chat with
-  const contacts = () => [...S.chats.values()].filter((c) => c.type === 'private' && !isSaved(c)).sort((a, b) => activity(b) - activity(a)).map((c) => c.peer);
+  // suggestions: contacts + people you already chat with
+  const suggestions = () => {
+    const map = new Map();
+    for (const u of S.contacts || []) map.set(u.id, u);
+    for (const c of [...S.chats.values()].filter((c) => c.type === 'private' && !isSaved(c)).sort((a, b) => activity(b) - activity(a))) if (!map.has(c.peer.id)) map.set(c.peer.id, c.peer);
+    return [...map.values()];
+  };
   let t;
   input.addEventListener('input', () => {
     clearTimeout(t);
     const q = input.value.trim();
-    if (!q) return paint(contacts());
+    if (!q) return paint(suggestions());
     t = setTimeout(async () => {
       try { const r = await api('GET', '/api/search?q=' + encodeURIComponent(q)); if (input.value.trim() === q) paint(r.users); } catch (e) { toast(e.message); }
     }, 220);
   });
-  paint(contacts());
-  return { el: h('div', {}, chips, field, results), selected, input };
+  App.loadContacts().then(() => { if (!input.value.trim()) paint(suggestions()); });
+  paint(suggestions());
+  return { el: h('div', { class: 'picker' }, field, results), selected, input };
 }
 
-App.newPrivateDialog = () => {
-  const picker = userPicker({ multiple: false, onPick: (u) => { m.close(); App.openPrivateWith(u.username); } });
-  const m = UI.modal({ title: 'پیام جدید', body: picker.el });
+App.loadContacts = async (force) => {
+  if (S.contacts && !force) return S.contacts;
+  try { S.contacts = (await api('GET', '/api/contacts')).contacts; } catch { S.contacts = S.contacts || []; }
+  return S.contacts;
 };
 
+/* ---------- new private chat / contacts (sidebar tabs) ---------- */
+App.newPrivateDialog = () => {
+  const picker = userPicker({ multiple: false, onPick: (u) => { App.side.pop(tab); App.openPrivateWith(u.username); } });
+  const tab = App.side.push({ title: 'گفتگوی خصوصی جدید', body: picker.el });
+  setTimeout(() => picker.input.focus(), 50);
+};
+
+App.openContacts = async () => {
+  const input = h('input', { type: 'search', placeholder: 'جستجوی مخاطبین', autocomplete: 'off' });
+  const list = h('div', { class: 'list' });
+  const paint = () => {
+    const q = input.value.trim().toLowerCase();
+    const items = (S.contacts || []).filter((u) => !q || userName(u).toLowerCase().includes(q) || u.username.toLowerCase().includes(q))
+      .sort((a, b) => (b.online - a.online) || (b.last_seen || 0) - (a.last_seen || 0));
+    list.replaceChildren(...(items.length ? items.map((u) => {
+      const row = App.personRow(u, () => { App.side.pop(tab); App.openPrivateWith(u.username); }, lastSeenText(u));
+      row.addEventListener('contextmenu', (e) => { e.preventDefault(); UI.menu([
+        { icon: 'edit', label: 'ویرایش مخاطب', onClick: () => App.contactDialog(u) },
+        { icon: 'trash', label: 'حذف مخاطب', danger: true, onClick: () => App.removeContact(u).then(paint) },
+      ], { x: e.clientX, y: e.clientY }); });
+      return row;
+    }) : [h('div', { class: 'empty-hint' }, S.contacts?.length ? 'کسی پیدا نشد' : 'هنوز مخاطبی ندارید.\nبا دکمه + کسی را با نام کاربری اضافه کنید.')]));
+  };
+  input.addEventListener('input', paint);
+  const tab = App.side.push({
+    title: 'مخاطبین', body: [h('div', { class: 'tab-search' }, icon('search'), input), list],
+    fab: { icon: 'personAdd', title: 'افزودن مخاطب', onClick: () => App.contactDialog(null, () => paint()) },
+  });
+  paint();
+  await App.loadContacts(true);
+  paint();
+};
+
+App.contactDialog = (u, done) => {
+  const uname = u ? null : UI.field('نام کاربری', { dir: 'ltr', placeholder: '@username' });
+  const name = UI.field('نام مخاطب', { value: u ? userName(u) : '', maxlength: 64 });
+  const ok = h('button', { class: 'btn flat' }, u?.is_contact ? 'ذخیره' : 'افزودن');
+  const m = UI.modal({
+    title: u?.is_contact ? 'ویرایش مخاطب' : 'افزودن مخاطب',
+    body: [u ? h('div', { class: 'contact-head' }, userAvatar(u, 's64'), h('div', {}, h('b', { dir: 'auto' }, u.display_name), h('div', { class: 's' }, '@' + u.username))) : null, uname, name],
+    foot: [
+      u?.is_contact ? h('button', { class: 'btn flat danger', onclick: async () => { m.close(); await App.removeContact(u); done && done(); } }, 'حذف مخاطب') : null,
+      h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), ok],
+  });
+  ok.addEventListener('click', async () => {
+    try {
+      const body = u ? { user_id: u.id, name: name.input.value.trim() } : { username: uname.input.value.trim().replace(/^@/, ''), name: name.input.value.trim() };
+      const r = await api('POST', '/api/contacts', body);
+      S.contacts = [...(S.contacts || []).filter((x) => x.id !== r.user.id), r.user];
+      m.close();
+      toast('مخاطب ذخیره شد');
+      done && done(r.user);
+    } catch (e) { toast(e.message); }
+  });
+};
+App.removeContact = async (u) => {
+  try { await api('DELETE', `/api/contacts/${u.id}`); S.contacts = (S.contacts || []).filter((x) => x.id !== u.id); toast('از مخاطبین حذف شد'); } catch (e) { toast(e.message); }
+};
+App.toggleBlock = async (u) => {
+  if (!u.blocked) {
+    if (!(await UI.ask('مسدود کردن کاربر', `${userName(u)} دیگر نمی‌تواند به شما پیام بدهد یا تماس بگیرد و وضعیت آنلاین و عکس شما را نمی‌بیند.`, 'مسدود کن', true))) return;
+    try { await api('POST', '/api/blocked', { user_id: u.id }); toast('مسدود شد'); } catch (e) { toast(e.message); }
+  } else {
+    try { await api('DELETE', `/api/blocked/${u.id}`); toast('رفع مسدودی شد'); } catch (e) { toast(e.message); }
+  }
+};
+
+/* ---------- calls list ---------- */
+App.openCalls = async () => {
+  const list = h('div', { class: 'list' }, h('div', { class: 'empty-hint' }, 'در حال بارگذاری…'));
+  App.side.push({ title: 'تماس‌ها', body: list });
+  try {
+    const { calls } = await api('GET', '/api/calls');
+    list.replaceChildren(...(calls.length ? calls.map((cl) => {
+      const missed = cl.state !== 'ended' && !cl.outgoing;
+      const c = S.chats.get(cl.chat_id);
+      return h('div', { class: 'ci call-row' + (missed ? ' missed' : ''), onclick: () => c && App.openChat(c.id) }, userAvatar(cl.peer),
+        h('div', { class: 'body' },
+          h('div', { class: 'row' }, h('div', { class: 'title' }, h('span', { class: 't', dir: 'auto' }, userName(cl.peer)))),
+          h('div', { class: 'row' }, h('div', { class: 'preview' }, icon(cl.outgoing ? 'callOut' : 'callIn', 'arrow'),
+            `${cl.video ? 'تصویری' : 'صوتی'} · ${fmtListTime(cl.created_at)}${cl.duration ? ' · ' + fmtDur(cl.duration) : ''}`))),
+        c ? h('button', { class: 'ibtn accent', type: 'button', title: 'تماس', onclick: (e) => { e.stopPropagation(); App.startCall(c, cl.video); } }, icon(cl.video ? 'video' : 'phone')) : null);
+    }) : [h('div', { class: 'empty-hint' }, 'هنوز تماسی نداشته‌اید')]));
+  } catch (e) { list.replaceChildren(h('div', { class: 'empty-hint' }, e.message)); }
+};
+
+/* ---------- new group / channel (Web K flow: members → details) ---------- */
 App.newChatDialog = (type) => {
   const isChannel = type === 'channel';
-  const title = UI.field(isChannel ? 'نام کانال' : 'نام گروه', { maxlength: 128 });
-  const desc = UI.field('توضیحات (اختیاری)', { multiline: true, rows: 2, maxlength: 255 });
-  const link = isChannel ? UI.field('لینک عمومی (اختیاری)', { dir: 'ltr', placeholder: 'my_channel', maxlength: 32 }, 'اگر بگذارید، همه می‌توانند کانال را با @نام پیدا کنند و عضو شوند') : null;
-  const picker = userPicker({ multiple: true });
-  const create = h('button', { class: 'btn flat' }, 'ساخت');
-  const m = UI.modal({
-    title: isChannel ? 'کانال جدید' : 'گروه جدید', wide: true,
-    body: [title, desc, link, h('div', { class: 'set-group-title' }, isChannel ? 'مشترک‌ها (اختیاری)' : 'اعضا'), picker.el],
-    foot: [create, h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف')],
-  });
-  create.addEventListener('click', async () => {
-    if (!title.input.value.trim()) { title.input.focus(); return toast('یک نام بنویسید'); }
-    create.disabled = true;
+  const details = () => {
+    let avatarFile = null;
+    const title = UI.field(isChannel ? 'نام کانال' : 'نام گروه', { maxlength: 128 });
+    const desc = UI.field('توضیحات (اختیاری)', { multiline: true, rows: 2, maxlength: 255 });
+    const link = isChannel ? UI.field('لینک عمومی (اختیاری)', { dir: 'ltr', placeholder: 'my_channel', maxlength: 32 }, 'اگر بگذارید، همه می‌توانند کانال را با @نام پیدا کنند') : null;
+    const av = avatarEditor({ name: '?', seed: Date.now() }, async (id) => { avatarFile = id; });
+    return { title, desc, link, av, getAvatar: () => avatarFile };
+  };
+  const create = async (d, users, fabBtn) => {
+    if (!d.title.input.value.trim()) { d.title.input.focus(); d.title.classList.add('error'); return toast('یک نام بنویسید'); }
+    fabBtn.disabled = true;
     try {
       const { chat } = await api('POST', `/api/chats/${type}`, {
-        title: title.input.value.trim(), description: desc.input.value.trim(),
-        username: link?.input.value.trim().replace(/^@/, '') || undefined,
-        usernames: [...picker.selected.values()].map((u) => u.username),
+        title: d.title.input.value.trim(), description: d.desc.input.value.trim(),
+        username: d.link?.input.value.trim().replace(/^@/, '') || undefined,
+        usernames: users.map((u) => u.username),
       });
+      if (d.getAvatar()) await api('PATCH', `/api/chats/${chat.id}`, { avatar: d.getAvatar() }).catch(() => {});
       S.chats.set(chat.id, chat);
-      m.close();
+      App.side.popAll();
       App.openChat(chat.id);
-    } catch (e) { toast(e.message); create.disabled = false; }
+    } catch (e) { toast(e.message); fabBtn.disabled = false; }
+  };
+  if (isChannel) {
+    const d = details();
+    const tab = App.side.push({
+      title: 'کانال جدید', body: [d.av, d.title, d.desc, d.link],
+      fab: { icon: 'back', title: 'بعدی', onClick: () => {
+        if (!d.title.input.value.trim()) return toast('یک نام بنویسید');
+        const picker = userPicker({ multiple: true });
+        const t2 = App.side.push({ title: 'افزودن مشترک', body: picker.el, fab: { icon: 'check', title: 'ساخت', onClick: () => create(d, [...picker.selected.values()], t2.fab) } });
+      } },
+    });
+    setTimeout(() => d.title.input.focus(), 50);
+    return tab;
+  }
+  const picker = userPicker({ multiple: true, onChange: (sel) => tab.fab.classList.toggle('hide', false) });
+  const tab = App.side.push({
+    title: 'افزودن اعضا', body: picker.el,
+    fab: { icon: 'back', title: 'بعدی', onClick: () => {
+      const users = [...picker.selected.values()];
+      const d = details();
+      const t2 = App.side.push({
+        title: 'گروه جدید', body: [d.av, d.title, d.desc, h('div', { class: 'section-caption' }, `${fa(users.length + 1)} عضو`), h('div', { class: 'picker-list' }, [S.me, ...users].map((u) => h('div', { class: 'pick' }, userAvatar(u, 's42'), h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, u.id === S.me.id ? 'شما' : userName(u)), h('div', { class: 's' }, lastSeenText(u))))))],
+        fab: { icon: 'check', title: 'ساخت', onClick: () => create(d, users, t2.fab) },
+      });
+      d.title.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(d, users, t2.fab); });
+      setTimeout(() => d.title.input.focus(), 50);
+    } },
   });
+  setTimeout(() => picker.input.focus(), 50);
+  return tab;
 };
 
 App.addMembersDialog = (c) => {
   const picker = userPicker({ multiple: true });
   const add = h('button', { class: 'btn flat' }, 'افزودن');
-  const m = UI.modal({ title: c.type === 'channel' ? 'افزودن مشترک' : 'افزودن عضو', body: picker.el, foot: [add, h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف')] });
+  const m = UI.modal({ title: c.type === 'channel' ? 'افزودن مشترک' : 'افزودن عضو', body: picker.el, wide: true, foot: [h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), add] });
   add.addEventListener('click', async () => {
     if (!picker.selected.size) return toast('کسی انتخاب نشده');
     try {
@@ -101,8 +223,8 @@ App.inviteDialog = async (c, revoke = false) => {
       body: [h('p', {}, 'هر کسی این لینک را داشته باشد می‌تواند عضو شود.'),
         h('div', { class: 'field' }, h('input', { value: url, readonly: true, dir: 'ltr', onclick: (e) => e.target.select() }))],
       foot: [
+        h('button', { class: 'btn flat danger', onclick: async () => { if (await UI.ask('باطل کردن لینک', 'لینک فعلی دیگر کار نمی‌کند و یک لینک تازه ساخته می‌شود.', 'باطل کن', true)) { m.close(); App.inviteDialog(c, true); } } }, 'باطل کردن'),
         h('button', { class: 'btn flat', onclick: () => copyText(url, 'لینک کپی شد') }, 'کپی لینک'),
-        h('button', { class: 'btn danger', onclick: async () => { if (await UI.ask('باطل کردن لینک', 'لینک فعلی دیگر کار نمی‌کند و یک لینک تازه ساخته می‌شود.', 'باطل کن', true)) { m.close(); App.inviteDialog(c, true); } } }, 'باطل کردن'),
       ],
     });
   } catch (e) { toast(e.message); }
@@ -120,9 +242,8 @@ App.joinDialog = async (ref) => {
         h('div', { class: 't', dir: 'auto' }, chat.title),
         h('div', { class: 'st' }, (chat.username ? '@' + chat.username + ' · ' : '') + membersText(chat)),
         chat.description ? h('p', { dir: 'auto', class: 'st' }, chat.description) : null,
-        h('div', { style: null }, btn)),
+        h('div', { class: 'join-wrap' }, btn)),
     });
-    btn.style.marginTop = '18px';
     btn.addEventListener('click', async () => {
       try {
         const r = await api('POST', '/api/join', ref);
@@ -134,36 +255,52 @@ App.joinDialog = async (ref) => {
   } catch (e) { toast(e.message); }
 };
 
-/* ---------- files ---------- */
+/* ---------- send media popup (Web K: compress / group / spoiler) ---------- */
 App.sendFilesDialog = (files, asFile) => {
   const c = S.chats.get(S.active);
   if (!c?.can_post) return;
-  const allMedia = files.every((f) => /^(image\/(jpeg|png|gif|webp)|video\/(mp4|webm|quicktime))$/.test(f.type));
+  const isMedia = (f) => /^(image\/(jpeg|png|gif|webp)|video\/(mp4|webm|quicktime))$/.test(f.type);
+  const allMedia = files.every(isMedia);
   let compress = !asFile && allMedia;
+  let group = files.length > 1;
+  let spoiler = false;
   const preview = h('div', { class: 'files-preview' });
   const urls = [];
   const paint = () => {
+    preview.classList.toggle('grid', compress && files.length > 1 && group);
     preview.replaceChildren(...files.map((f) => {
-      if (compress && f.type.startsWith('image/')) { const u = URL.createObjectURL(f); urls.push(u); return h('div', { class: 'fp' }, h('img', { src: u, alt: '' })); }
-      if (compress && f.type.startsWith('video/')) { const u = URL.createObjectURL(f); urls.push(u); return h('div', { class: 'fp' }, h('video', { src: u, muted: true })); }
+      if (compress && f.type.startsWith('image/')) { const u = URL.createObjectURL(f); urls.push(u); return h('div', { class: 'fp' + (spoiler ? ' is-spoiler' : '') }, h('img', { src: u, alt: '' })); }
+      if (compress && f.type.startsWith('video/')) { const u = URL.createObjectURL(f); urls.push(u); return h('div', { class: 'fp' + (spoiler ? ' is-spoiler' : '') }, h('video', { src: u, muted: true })); }
       return h('div', { class: 'fp doc' }, h('span', { class: 'ficon' }, icon('file')), h('div', {}, h('div', { class: 'fn' }, f.name), h('div', { class: 'st' }, fmtSize(f.size))));
     }));
   };
   paint();
-  const caption = UI.field('کپشن (اختیاری)', { multiline: true, rows: 2, maxlength: 4096 });
-  const asFileRow = allMedia ? UI.switchRow('file', 'ارسال بدون فشرده‌سازی (به صورت فایل)', null, !compress, (v) => { compress = !v; paint(); }) : null;
+  const caption = UI.field('کپشن (اختیاری)', { multiline: true, rows: 1, maxlength: 4096 });
+  const opts = h('div', { class: 'send-opts' },
+    allMedia ? UI.checkRow('فشرده‌سازی تصویر', compress, (v) => { compress = v; paint(); }) : null,
+    files.length > 1 ? UI.checkRow('گروه کردن (آلبوم)', group, (v) => { group = v; paint(); }) : null,
+    allMedia ? UI.checkRow('پوشاندن با اسپویلر', spoiler, (v) => { spoiler = v; paint(); }) : null);
   const send = h('button', { class: 'btn flat' }, 'ارسال');
   const m = UI.modal({
     title: files.length > 1 ? `ارسال ${fa(files.length)} فایل` : compress ? (files[0].type.startsWith('video/') ? 'ارسال ویدیو' : 'ارسال عکس') : 'ارسال فایل',
-    body: [preview, caption, asFileRow],
-    foot: [send, h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف')],
+    body: [preview, opts, caption], cls: 'send-files',
+    foot: [h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), send],
     onClose: () => setTimeout(() => urls.forEach((u) => URL.revokeObjectURL(u)), 1000),
   });
   const go = () => {
     const cap = caption.input.value.trim();
     const replyTo = S.reply?.id || null;
     m.close();
-    files.forEach((f, i) => App.upload(f, { caption: i === 0 ? cap : '', asFile: !compress, replyTo: i === 0 ? replyTo : null }));
+    // albums hold up to 10 items, like Telegram
+    const groups = [];
+    for (let i = 0; i < files.length; i += 10) groups.push(files.slice(i, i + 10));
+    for (const chunk of groups) {
+      const gid = group && chunk.length > 1 ? Math.random().toString(36).slice(2, 12) + Date.now().toString(36) : null;
+      chunk.forEach((f, i) => App.upload(f, {
+        caption: groups[0] === chunk && i === 0 ? cap : '', asFile: !compress, replyTo: groups[0] === chunk && i === 0 ? replyTo : null,
+        grouped: gid, spoiler: spoiler && compress,
+      }));
+    }
     if (replyTo) { S.reply = null; App.renderComposerBar(); }
   };
   send.addEventListener('click', go);
@@ -186,14 +323,14 @@ App.pollDialog = (c) => {
   const create = h('button', { class: 'btn flat' }, 'ساخت');
   const m = UI.modal({
     title: 'نظرسنجی جدید',
-    body: [q, h('div', { class: 'set-group-title' }, 'گزینه‌ها'), optsBox, h('button', { class: 'btn flat', type: 'button', onclick: () => addOpt() }, icon('plus'), 'افزودن گزینه')],
-    foot: [create, h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف')],
+    body: [q, h('div', { class: 'section-caption' }, 'گزینه‌ها'), optsBox, h('button', { class: 'btn flat', type: 'button', onclick: () => addOpt() }, icon('plus'), 'افزودن گزینه')],
+    foot: [h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), create],
   });
   create.addEventListener('click', async () => {
     const options = $$('input', optsBox).map((i) => i.value.trim()).filter(Boolean);
     if (!q.input.value.trim()) return toast('سؤال را بنویسید');
     if (options.length < 2) return toast('حداقل ۲ گزینه لازم است');
-    const body = { type: 'send', chat_id: c.id, poll: { question: q.input.value.trim(), options } };
+    const body = { type: 'send', chat_id: c.id, poll: { question: q.input.value.trim(), options }, ...App.topicFields(c) };
     try {
       if (!App.wsSend(body)) App.onMessage((await api('POST', `/api/chats/${c.id}/messages`, body)).message);
       m.close();
@@ -204,16 +341,93 @@ App.pollDialog = (c) => {
 /* ---------- forward ---------- */
 App.forwardDialog = (ids) => {
   const input = h('input', { type: 'search', placeholder: 'جستجو…' });
-  const list = h('div');
+  const list = h('div', { class: 'picker-list' });
   const paint = () => {
     const q = input.value.trim().toLowerCase();
     const chats = App.sortedChats(false).concat(App.sortedChats(true)).filter((c) => c.can_post && (!q || chatTitle(c).toLowerCase().includes(q)));
-    list.replaceChildren(...chats.map((c) => h('div', { class: 'pick', onclick: () => { m.close(); App.forward(ids, c.id, false); } },
-      chatAvatar(c, 's40'), h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, chatTitle(c)), h('div', { class: 's' }, R.chatStatus(c).text || (isSaved(c) ? 'ذخیره برای خودتان' : ''))))));
+    list.replaceChildren(...chats.map((c) => h('div', { class: 'pick', onclick: () => { m.close(); App.forward(ids, c.id, false, c.is_forum ? 0 : undefined); } },
+      chatAvatar(c, 's42'), h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, chatTitle(c)), h('div', { class: 's' }, R.chatStatus(c).text || (isSaved(c) ? 'ذخیره برای خودتان' : ''))))));
   };
   input.addEventListener('input', paint);
   paint();
-  const m = UI.modal({ title: 'بازارسال به…', body: [h('label', { class: 'field' }, input, h('span', {}, 'گفتگو')), list] });
+  const m = UI.modal({ title: 'بازارسال به…', body: [h('div', { class: 'tab-search' }, icon('search'), input), list], cls: 'forward' });
+};
+
+/* ---------- stickers: pack viewer, search, create ---------- */
+App.stickerPackOf = (m) => { if (m.sticker?.pack_id) App.stickerPackDialog(m.sticker.pack_id); };
+App.stickerPackDialog = async (ref) => {
+  try {
+    const { pack } = await api('GET', `/api/stickers/packs/${encodeURIComponent(ref)}`);
+    const btn = h('button', { class: 'btn block' + (pack.installed ? ' danger-fill' : '') }, pack.installed ? `حذف ${fa(pack.count)} استیکر` : `افزودن ${fa(pack.count)} استیکر`);
+    const grid = h('div', { class: 'st-grid big' }, pack.stickers.map((st) => h('button', { type: 'button', class: 'st', title: st.emoji, onclick: () => {
+      if (S.active && S.chats.get(S.active)?.can_post) { App.rememberSticker(st); App.sendSticker(st); m.close(); }
+    } }, h('img', { src: st.url, alt: st.emoji, loading: 'lazy' }))));
+    const m = UI.modal({
+      title: pack.title, wide: true, cls: 'sticker-pack', body: [grid, pack.mine ? h('div', { class: 'pack-tools' },
+        h('button', { class: 'btn flat', onclick: () => { m.close(); App.addStickerToPack(pack); } }, icon('plus'), 'افزودن استیکر'),
+        h('button', { class: 'btn flat', onclick: () => copyText(`${location.origin}/#/addstickers/${pack.short_name}`, 'لینک کپی شد') }, icon('link'), 'کپی لینک')) : null],
+      foot: [btn],
+    });
+    btn.addEventListener('click', async () => {
+      try {
+        await api(pack.installed ? 'DELETE' : 'POST', `/api/stickers/packs/${pack.id}/install`);
+        await App.loadStickers(true);
+        toast(pack.installed ? 'بسته حذف شد' : 'بسته اضافه شد');
+        m.close();
+      } catch (e) { toast(e.message); }
+    });
+  } catch (e) { toast(e.message); }
+};
+App.stickerSearchDialog = () => {
+  const input = h('input', { type: 'search', placeholder: 'جستجوی بسته‌ها' });
+  const list = h('div', { class: 'picker-list' });
+  const run = async () => {
+    try {
+      const { packs } = await api('GET', '/api/stickers/search?q=' + encodeURIComponent(input.value.trim()));
+      list.replaceChildren(...(packs.length ? packs.map((p) => h('div', { class: 'pick', onclick: () => { m.close(); App.stickerPackDialog(p.id); } },
+        p.thumb ? h('img', { class: 'pack-thumb', src: p.thumb, alt: '' }) : h('span', { class: 'pack-thumb' }),
+        h('div', { class: 'body' }, h('div', { class: 'n' }, p.title), h('div', { class: 's' }, `${fa(p.count)} استیکر`)),
+        p.installed ? icon('check', 'ok') : null)) : [h('div', { class: 'info-empty' }, 'بسته‌ای پیدا نشد')]));
+    } catch (e) { toast(e.message); }
+  };
+  let t;
+  input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 250); });
+  const m = UI.modal({ title: 'بسته‌های استیکر', body: [h('div', { class: 'tab-search' }, icon('search'), input), list],
+    foot: [h('button', { class: 'btn flat', onclick: () => { m.close(); App.createPackDialog(); } }, 'ساخت بسته‌ی جدید')] });
+  run();
+};
+App.createPackDialog = () => {
+  const title = UI.field('نام بسته', { maxlength: 64 });
+  const short = UI.field('نام کوتاه (برای لینک)', { dir: 'ltr', maxlength: 32, placeholder: 'my_stickers' }, 'حروف انگلیسی، عدد و _');
+  const ok = h('button', { class: 'btn flat' }, 'ساخت');
+  const m = UI.modal({ title: 'بسته‌ی استیکر جدید', body: [title, short], foot: [h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), ok] });
+  ok.addEventListener('click', async () => {
+    try {
+      const { pack } = await api('POST', '/api/stickers/packs', { title: title.input.value.trim(), short_name: short.input.value.trim() });
+      await App.loadStickers(true);
+      m.close();
+      App.addStickerToPack(pack);
+    } catch (e) { toast(e.message); }
+  });
+};
+App.addStickerToPack = async (pack) => {
+  const inp = h('input', { type: 'file', accept: 'image/png,image/webp,image/gif,image/jpeg', multiple: true });
+  inp.addEventListener('change', async () => {
+    const files = [...inp.files];
+    if (!files.length) return;
+    const emoji = (await UI.prompt('اموجی استیکر', 'یک اموجی برای این استیکرها', '🙂')) || '';
+    toast('در حال آپلود…');
+    for (const f of files) {
+      try {
+        const sq = await squareImage(f, 512, 'image/png');
+        const up = await uploadFile(sq, 'sticker.png');
+        await api('POST', `/api/stickers/packs/${pack.id}/stickers`, { file_id: up.id, emoji });
+      } catch (e) { toast(e.message); }
+    }
+    await App.loadStickers(true);
+    App.stickerPackDialog(pack.id);
+  });
+  inp.click();
 };
 
 /* ---------- avatar upload helper ---------- */
@@ -224,17 +438,24 @@ function pickImage() {
     inp.click();
   });
 }
-// Crop to a centered square and shrink to 640px so avatars stay small and sharp.
-async function squareImage(file) {
+// Fit into a square (crop for avatars, contain for stickers) and shrink so it stays small and sharp.
+async function squareImage(file, size = 640, type = 'image/jpeg') {
   try {
     const bmp = await createImageBitmap(file);
-    const side = Math.min(bmp.width, bmp.height);
-    const out = Math.min(640, side);
     const cv = document.createElement('canvas');
-    cv.width = cv.height = out;
-    cv.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, out, out);
-    const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.9));
-    return blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : file;
+    const ctx = cv.getContext('2d');
+    if (type === 'image/png') {
+      const k = Math.min(1, size / Math.max(bmp.width, bmp.height));
+      cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+      ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+    } else {
+      const side = Math.min(bmp.width, bmp.height);
+      const out = Math.min(size, side);
+      cv.width = cv.height = out;
+      ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, out, out);
+    }
+    const blob = await new Promise((r) => cv.toBlob(r, type, 0.9));
+    return blob ? new File([blob], type === 'image/png' ? 'image.png' : 'avatar.jpg', { type }) : file;
   } catch { return file; }
 }
 async function uploadAvatar() {
@@ -256,113 +477,131 @@ function avatarEditor(ent, onChange) {
   return box;
 }
 
-/* ---------- edit group / channel ---------- */
-App.editChatDialog = (c) => {
-  const title = UI.field(c.type === 'channel' ? 'نام کانال' : 'نام گروه', { value: c.title, maxlength: 128 });
-  const desc = UI.field('توضیحات', { multiline: true, rows: 3, value: c.description || '', maxlength: 255 });
-  const link = UI.field('لینک عمومی', { dir: 'ltr', value: c.username || '', placeholder: 'خالی = خصوصی', maxlength: 32 },
-    c.username ? publicUrl(c.username) : 'با گذاشتن نام، همه می‌توانند با @نام پیدا و عضو شوند');
-  const saveBtn = h('button', { class: 'btn flat' }, 'ذخیره');
-  const m = UI.modal({
-    title: 'ویرایش',
-    body: [
-      avatarEditor({ name: c.title, avatar: c.avatar, seed: c.id * 7 + 3 }, (id) => api('PATCH', `/api/chats/${c.id}`, { avatar: id })),
-      title, desc, link,
-      c.avatar ? UI.row('trash', 'حذف عکس', null, async () => { try { await api('PATCH', `/api/chats/${c.id}`, { avatar: null }); m.close(); } catch (e) { toast(e.message); } }, 'danger') : null,
-      c.role === 'owner' ? UI.row('trash', c.type === 'channel' ? 'حذف کانال' : 'حذف گروه', 'برای همه اعضا حذف می‌شود', async () => {
-        if (await UI.ask('حذف برای همه', `«${c.title}» و همه پیام‌هایش برای همیشه حذف می‌شود.`, 'حذف', true)) {
-          try { await api('DELETE', `/api/chats/${c.id}`); m.close(); App.removeChat(c.id); } catch (e) { toast(e.message); }
-        }
-      }, 'danger') : null,
-    ],
-    foot: [saveBtn, h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف')],
-  });
-  saveBtn.addEventListener('click', async () => {
-    try {
-      const { chat } = await api('PATCH', `/api/chats/${c.id}`, { title: title.input.value.trim(), description: desc.input.value.trim(), username: link.input.value.trim().replace(/^@/, '') || null });
-      S.chats.set(chat.id, chat);
-      m.close();
-      toast('ذخیره شد');
-    } catch (e) { toast(e.message); }
-  });
-};
-
-/* ---------- info panel ---------- */
-App.toggleInfo = () => {
+/* =====================================================================
+   INFO COLUMN (right sidebar, sliding tabs)
+   ===================================================================== */
+App.buildInfo = () => {
   const info = $('#info');
-  if (!info.hidden) { info.hidden = true; return; }
+  el.infoBase = h('div', { class: 'stab main in' });
+  info.replaceChildren(el.infoBase);
+  App.infoSide = new UI.Slider(info, el.infoBase);
+  info.hidden = true;
+};
+App.closeInfo = () => {
+  const info = $('#info');
+  App.infoSide?.popAll();
+  info.hidden = true;
+  App.infoChat = null;
+  document.body.classList.remove('info-open');
+};
+App.toggleInfo = () => {
+  if (!$('#info').hidden && App.infoChat === S.active) return App.closeInfo();
   App.openInfo(S.active);
 };
+
 App.openInfo = async (chatId, refresh) => {
   const c = S.chats.get(chatId);
   if (!c) return;
   const info = $('#info');
   const tab = refresh ? info.dataset.tab : null;
+  if (!refresh) App.infoSide.popAll();
   info.hidden = false;
+  document.body.classList.add('info-open');
+  App.infoChat = chatId;
   info.dataset.chat = String(chatId);
   let details = { members: [] };
   if (c.type !== 'private') { try { details = await api('GET', `/api/chats/${chatId}`); } catch {} }
-  if (S.active !== chatId || info.hidden) return;
+  if (App.infoChat !== chatId || info.hidden) return;
+  const priv = c.type === 'private' && !isSaved(c);
   const st = R.chatStatus(c);
   const rows = h('div', { class: 'info-rows' });
   if (c.username) rows.append(UI.row(c.type === 'private' ? 'at' : 'link', c.type === 'private' ? '@' + c.username : publicUrl(c.username), c.type === 'private' ? 'نام کاربری' : 'لینک', () => copyText(c.type === 'private' ? '@' + c.username : publicUrl(c.username))));
-  if (c.description) rows.append(UI.row('info', c.description, c.type === 'private' ? 'بیوگرافی' : 'توضیحات', () => copyText(c.description)));
+  if (c.description) rows.append(UI.row('info', c.description, c.type === 'private' ? 'بیوگرافی' : 'توضیحات', () => copyText(c.description), 'multi'));
   if (c.can_manage && c.invite_token) rows.append(UI.row('link', inviteUrl(c.invite_token), 'لینک دعوت', () => copyText(inviteUrl(c.invite_token), 'لینک کپی شد')));
   if (!isSaved(c)) rows.append(UI.switchRow('bell', 'اعلان‌ها', c.muted ? 'خاموش' : 'روشن', !c.muted, (v) => App.chatSetting(c, { muted: !v })));
+  if (priv) {
+    rows.append(UI.row('personAdd', c.peer.is_contact ? 'ویرایش مخاطب' : 'افزودن به مخاطبین', null, () => App.contactDialog(c.peer)));
+    rows.append(UI.row('block', c.peer.blocked ? 'رفع مسدودی' : 'مسدود کردن کاربر', null, () => App.toggleBlock(c.peer), c.peer.blocked ? '' : 'danger'));
+  }
   if (c.can_manage) {
     rows.append(UI.row('personAdd', c.type === 'channel' ? 'افزودن مشترک' : 'افزودن عضو', null, () => App.addMembersDialog(c)));
     if (!c.invite_token) rows.append(UI.row('link', 'ساخت لینک دعوت', null, () => App.inviteDialog(c)));
-    rows.append(UI.row('edit', 'ویرایش', null, () => App.editChatDialog(c)));
   }
-  rows.append(UI.row(c.type === 'private' ? 'trash' : 'logout', c.type === 'private' ? 'حذف گفتگو' : c.type === 'channel' ? 'ترک کانال' : 'ترک گروه', null, () => App.leaveOrDelete(c), 'danger'));
+  if (c.type !== 'private') rows.append(UI.row('logout', c.type === 'channel' ? 'ترک کانال' : 'ترک گروه', null, () => App.leaveOrDelete(c), 'danger'));
 
   const tabs = [];
   if (details.members.length) tabs.push(['members', c.type === 'channel' ? 'مشترک‌ها' : 'اعضا']);
-  tabs.push(['media', 'رسانه'], ['file', 'فایل‌ها'], ['voice', 'صوت']);
-  const tabBar = h('div', { class: 'info-tabs' });
-  const content = h('div');
+  if (priv) tabs.push(['stories', 'استوری‌ها']);
+  tabs.push(['media', 'رسانه'], ['file', 'فایل‌ها'], ['link', 'لینک‌ها'], ['music', 'موسیقی'], ['voice', 'صوت'], ['gif', 'GIF']);
+  const content = h('div', { class: 'info-content' });
   const showTab = async (key) => {
     info.dataset.tab = key;
-    $$('button', tabBar).forEach((b) => b.classList.toggle('on', b.dataset.k === key));
+    tabBar.select(key);
     if (key === 'members') return content.replaceChildren(h('div', { class: 'info-list' }, details.members.map((u) => App.memberRow(c, u))));
     content.replaceChildren(h('div', { class: 'info-empty' }, 'در حال بارگذاری…'));
     try {
+      if (key === 'stories') {
+        const r = await api('GET', `/api/users/${c.peer.id}/stories`);
+        if (info.dataset.tab !== key) return;
+        const all = [...r.stories, ...r.pinned.filter((p) => !r.stories.some((s) => s.id === p.id))];
+        if (!all.length) return content.replaceChildren(h('div', { class: 'info-empty' }, 'استوری‌ای نیست'));
+        return content.replaceChildren(h('div', { class: 'media-grid stories' }, all.map((s) => h('div', { class: 'mg', onclick: () => Stories.openList(r.user, all, s.id) },
+          s.kind === 'photo' ? h('img', { src: s.url, loading: 'lazy', alt: '' }) : h('video', { src: s.url, preload: 'metadata', muted: true })))));
+      }
       const { messages } = await api('GET', `/api/chats/${chatId}/media?type=${key}`);
       if (info.dataset.tab !== key) return;
       if (!messages.length) return content.replaceChildren(h('div', { class: 'info-empty' }, 'چیزی نیست'));
-      if (key === 'media') {
-        content.replaceChildren(h('div', { class: 'media-grid' }, messages.map((m) => h('div', { class: 'mg', onclick: () => UI.lightbox(m) },
-          m.kind === 'photo' ? h('img', { src: m.media.url, loading: 'lazy', alt: '' }) : h('video', { src: m.media.url, preload: 'metadata', muted: true }),
-          m.kind === 'video' ? h('span', { class: 'vb' }, '▶ ' + fmtDur(m.media.duration || 0)) : null))));
+      if (key === 'media' || key === 'gif') {
+        content.replaceChildren(h('div', { class: 'media-grid' }, messages.map((m) => h('div', { class: 'mg', onclick: () => UI.lightbox(m, messages.slice().reverse()) },
+          m.kind === 'photo' || m.media.mime === 'image/gif' ? h('img', { src: m.media.url, loading: 'lazy', alt: '' }) : h('video', { src: m.media.url, preload: 'metadata', muted: true, ...(m.kind === 'gif' ? { autoplay: true, loop: true } : {}) }),
+          m.kind === 'video' ? h('span', { class: 'vb' }, fmtDur(m.media.duration || 0)) : null))));
+      } else if (key === 'link') {
+        content.replaceChildren(h('div', { class: 'info-list' }, messages.map((m) => {
+          const url = (m.text.match(/https?:\/\/[^\s]+/) || [''])[0];
+          let host = url;
+          try { host = new URL(url).hostname; } catch {}
+          return h('div', { class: 'pick link-row', onclick: () => App.jumpTo(chatId, m.id) },
+            h('span', { class: 'link-ic' }, [...host.replace(/^www\./, '')][0]?.toUpperCase() || '🔗'),
+            h('div', { class: 'body' }, h('div', { class: 'n', dir: 'ltr' }, host), h('a', { class: 's', href: url, target: '_blank', rel: 'noopener noreferrer', dir: 'ltr', onclick: (e) => e.stopPropagation() }, url),
+              h('div', { class: 's', dir: 'auto' }, R.stripMarkup(m.text).slice(0, 80))));
+        })));
       } else {
         content.replaceChildren(h('div', { class: 'info-list' }, messages.map((m) => h('div', { class: 'pick', onclick: () => App.jumpTo(chatId, m.id) },
-          key === 'voice' ? userAvatar(m.sender, 's40') : h('span', { class: 'ficon avatar s40 g5' }, icon('file')),
+          key === 'voice' ? userAvatar(m.sender, 's42') : h('span', { class: 'ficon avatar s42 ' + (key === 'music' ? 'g2' : 'g5') }, icon(key === 'music' ? 'music' : 'file')),
           h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, key === 'voice' ? m.sender.display_name : m.media.name),
-            h('div', { class: 's' }, `${fmtSize(m.media.size)} · ${fmtListTime(m.created_at)}`)),
+            h('div', { class: 's' }, `${key === 'voice' ? fmtDur(m.media.duration || 0) : fmtSize(m.media.size)} · ${fmtListTime(m.created_at)}`)),
           h('a', { class: 'ibtn', href: m.media.url, download: m.media.name, onclick: (e) => e.stopPropagation() }, icon('download'))))));
       }
     } catch (e) { content.replaceChildren(h('div', { class: 'info-empty' }, e.message)); }
   };
-  tabs.forEach(([k, label]) => tabBar.append(h('button', { type: 'button', dataset: { k }, onclick: () => showTab(k) }, label)));
+  const tabBar = UI.tabs(tabs, tabs[0][0], showTab, 'info-tabs');
 
-  const big = chatAvatar(c, 's120');
-  big.addEventListener('click', () => {
-    if (c.avatar) UI.lightbox({ kind: 'photo', media: { url: c.avatar, name: 'avatar.jpg' }, sender: c.peer || { display_name: c.title, id: c.id }, created_at: Date.now(), id: 0 });
-  });
-  info.replaceChildren(
-    h('div', { class: 'info-head' }, ibtn('close', 'بستن', () => (info.hidden = true)),
-      h('h3', {}, c.type === 'private' ? 'اطلاعات کاربر' : c.type === 'channel' ? 'اطلاعات کانال' : 'اطلاعات گروه'),
-      c.can_manage ? ibtn('edit', 'ویرایش', () => App.editChatDialog(c)) : null),
-    h('div', { class: 'info-body' },
-      h('div', { class: 'info-top' }, big, h('div', { class: 't', dir: 'auto' }, chatTitle(c)), st.text ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, st.text) : null),
-      rows, tabBar, content));
+  // Web K: full-width square photo with the name on top of it; otherwise a round avatar
+  let top;
+  const name = h('div', { class: 't', dir: 'auto' }, chatTitle(c));
+  const status = st.text ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, st.text) : null;
+  if (c.avatar && !isSaved(c)) {
+    top = h('div', { class: 'info-photo', onclick: () => {
+      if (priv && c.peer.stories) return App.openStoriesOf(c.peer.id);
+      UI.lightbox({ kind: 'photo', media: { url: c.avatar, name: 'avatar.jpg' }, sender: c.peer || { display_name: c.title, id: c.id }, created_at: Date.now(), id: 0 }, null);
+    } }, h('img', { src: c.avatar, alt: '' }), h('div', { class: 'ip-over' }, name, status));
+  } else {
+    const big = chatAvatar(c, 's120');
+    if (priv && c.peer.stories) big.addEventListener('click', () => App.openStoriesOf(c.peer.id));
+    top = h('div', { class: 'info-top' }, big, name, status);
+  }
+  el.infoBase.replaceChildren(
+    h('div', { class: 'stab-head' }, ibtn('close', 'بستن', App.closeInfo),
+      h('h2', {}, c.type === 'private' ? (isSaved(c) ? 'پیام‌های ذخیره‌شده' : 'اطلاعات کاربر') : c.type === 'channel' ? 'اطلاعات کانال' : 'اطلاعات گروه'),
+      h('div', { class: 'actions' }, c.can_manage ? ibtn('edit', 'ویرایش', () => App.editChatDialog(c)) : priv ? ibtn('edit', 'ویرایش مخاطب', () => App.contactDialog(c.peer)) : null)),
+    h('div', { class: 'stab-body info-body' }, top, rows, h('div', { class: 'info-media' }, tabBar, content)));
   showTab(tab && tabs.some((t) => t[0] === tab) ? tab : tabs[0][0]);
 };
 
 App.memberRow = (c, u) => {
   const roleLabel = u.role === 'owner' ? 'مالک' : u.role === 'admin' ? 'ادمین' : '';
-  const row = h('div', { class: 'pick' }, userAvatar(u, 's40'),
-    h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, u.id === S.me.id ? 'شما' : u.display_name),
+  const row = h('div', { class: 'pick' }, userAvatar(u, 's42'),
+    h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, u.id === S.me.id ? 'شما' : userName(u)),
       h('div', { class: 's' + (u.online ? ' accent' : '') }, lastSeenText(u))),
     roleLabel ? h('span', { class: 'role' }, roleLabel) : null);
   if (u.id === S.me.id) return row;
@@ -371,6 +610,7 @@ App.memberRow = (c, u) => {
     const canKick = c.can_manage && u.role !== 'owner' && (u.role !== 'admin' || owner);
     UI.menu([
       { icon: 'user', label: 'ارسال پیام', onClick: () => App.openPrivateWith(u.username) },
+      !u.is_contact ? { icon: 'personAdd', label: 'افزودن به مخاطبین', onClick: () => App.contactDialog(u) } : null,
       owner && u.role === 'member' ? { icon: 'shield', label: 'ادمین کردن', onClick: () => App.setRole(c, u, 'admin') } : null,
       owner && u.role === 'admin' ? { icon: 'shield', label: 'برکناری از ادمینی', onClick: () => App.setRole(c, u, 'member') } : null,
       canKick ? { icon: 'trash', label: c.type === 'channel' ? 'حذف از کانال' : 'حذف از گروه', danger: true, onClick: () => App.kick(c, u) } : null,
@@ -386,85 +626,40 @@ App.kick = async (c, u) => {
   try { await api('DELETE', `/api/chats/${c.id}/members/${u.id}`); } catch (e) { toast(e.message); }
 };
 
-/* ---------- settings ---------- */
-App.settingsDialog = () => {
-  const me = S.me;
-  const name = UI.field('نام نمایشی', { value: me.display_name, maxlength: 64 });
-  const uname = UI.field('نام کاربری', { value: me.username, dir: 'ltr', maxlength: 32 }, 'دیگران می‌توانند با @' + me.username + ' شما را پیدا کنند');
-  const bio = UI.field('بیوگرافی', { multiline: true, rows: 2, value: me.bio || '', maxlength: 170 }, 'چند کلمه درباره خودتان');
-  const saveBtn = h('button', { class: 'btn flat' }, 'ذخیره');
-  const notifSupported = 'Notification' in window;
-  const m = UI.modal({
-    title: 'تنظیمات', wide: true,
-    body: [
-      avatarEditor({ name: me.display_name, avatar: me.avatar, seed: me.id }, async (id) => { S.me = (await api('PATCH', '/api/me', { avatar: id })).user; }),
-      name, uname, bio,
-      me.avatar ? UI.row('trash', 'حذف عکس پروفایل', null, async () => { try { S.me = (await api('PATCH', '/api/me', { avatar: null })).user; m.close(); toast('حذف شد'); } catch (e) { toast(e.message); } }, 'danger') : null,
-      h('div', { class: 'set-group-title' }, 'ظاهر'),
-      UI.switchRow('moon', 'حالت شب', null, S.settings.theme === 'dark', (v) => { S.settings.theme = v ? 'dark' : 'light'; saveSettings(); applyTheme(); }),
-      h('div', { class: 'set-group-title' }, 'اعلان‌ها'),
-      notifSupported ? UI.switchRow('bell', 'اعلان دسکتاپ', Notification.permission === 'denied' ? 'در تنظیمات مرورگر مسدود شده' : 'وقتی کبوتر باز نیست', S.settings.notify && Notification.permission === 'granted', async (v) => {
-        if (v && Notification.permission !== 'granted') {
-          const p = await Notification.requestPermission();
-          if (p !== 'granted') throw new Error('اجازه اعلان داده نشد');
-        }
-        S.settings.notify = v; saveSettings();
-      }) : null,
-      UI.switchRow('bell', 'صدای پیام', null, S.settings.sound, (v) => { S.settings.sound = v; saveSettings(); if (v) App.beep(); }),
-      h('div', { class: 'set-group-title' }, 'حریم خصوصی و امنیت'),
-      UI.switchRow('eye', 'نمایش آخرین بازدید', 'اگر خاموش باشد، دیگران «به تازگی» می‌بینند', me.show_last_seen !== false, async (v) => { S.me = (await api('PATCH', '/api/me', { show_last_seen: v })).user; }),
-      UI.row('devices', 'دستگاه‌های فعال', 'ببینید کجا وارد شده‌اید', () => App.sessionsDialog()),
-      UI.row('key', 'تغییر رمز عبور', null, () => App.passwordDialog()),
-      UI.row('logout', 'خروج از حساب', null, async () => { if (await UI.ask('خروج', 'از حساب خود خارج می‌شوید؟', 'خروج', true)) { m.close(); App.logout(false); } }, 'danger'),
-    ],
-    foot: [saveBtn, h('button', { class: 'btn flat', onclick: () => m.close() }, 'بستن')],
-  });
-  saveBtn.addEventListener('click', async () => {
-    const body = { display_name: name.input.value.trim(), bio: bio.input.value.trim() };
-    if (uname.input.value.trim().replace(/^@/, '') !== me.username) body.username = uname.input.value.trim().replace(/^@/, '');
-    try {
-      S.me = (await api('PATCH', '/api/me', body)).user;
-      toast('ذخیره شد');
-      m.close();
-    } catch (e) { toast(e.message); }
+/* ---------- edit group / channel (info column tab) ---------- */
+App.editChatDialog = (c) => {
+  if ($('#info').hidden || App.infoChat !== c.id) App.openInfo(c.id);
+  const title = UI.field(c.type === 'channel' ? 'نام کانال' : 'نام گروه', { value: c.title, maxlength: 128 });
+  const desc = UI.field('توضیحات', { multiline: true, rows: 3, value: c.description || '', maxlength: 255 });
+  const link = UI.field('لینک عمومی', { dir: 'ltr', value: c.username || '', placeholder: 'خالی = خصوصی', maxlength: 32 },
+    c.username ? publicUrl(c.username) : 'با گذاشتن نام، همه می‌توانند با @نام پیدا و عضو شوند');
+  let forum = !!c.is_forum;
+  const body = [
+    avatarEditor({ name: c.title, avatar: c.avatar, seed: c.id * 7 + 3 }, (id) => api('PATCH', `/api/chats/${c.id}`, { avatar: id })),
+    h('div', { class: 'section' }, title, desc, link),
+    c.type === 'group' ? UI.section(null, UI.switchRow('topic', 'تاپیک‌ها', 'گفتگوهای گروه در چند موضوع جدا', forum, (v) => { forum = v; }), 'وقتی تاپیک‌ها فعال باشند، پیام‌های قبلی به تاپیک «عمومی» منتقل می‌شوند.') : null,
+    UI.section(null, [
+      UI.row('link', 'لینک‌های دعوت', null, () => App.inviteDialog(c)),
+      UI.row('group', c.type === 'channel' ? 'مشترک‌ها' : 'اعضا', fa(c.member_count), () => { App.infoSide.pop(); }),
+      c.avatar ? UI.row('trash', 'حذف عکس', null, async () => { try { await api('PATCH', `/api/chats/${c.id}`, { avatar: null }); toast('حذف شد'); } catch (e) { toast(e.message); } }, 'danger') : null,
+    ]),
+    c.role === 'owner' ? UI.section(null, UI.row('trash', c.type === 'channel' ? 'حذف کانال' : 'حذف گروه', 'برای همه اعضا حذف می‌شود', async () => {
+      if (await UI.ask('حذف برای همه', `«${c.title}» و همه پیام‌هایش برای همیشه حذف می‌شود.`, 'حذف', true)) {
+        try { await api('DELETE', `/api/chats/${c.id}`); App.closeInfo(); App.removeChat(c.id); } catch (e) { toast(e.message); }
+      }
+    }, 'danger')) : null,
+  ];
+  const tab = App.infoSide.push({
+    title: 'ویرایش', body, cls: 'edit-tab',
+    fab: { icon: 'check', title: 'ذخیره', onClick: async () => {
+      try {
+        const payload = { title: title.input.value.trim(), description: desc.input.value.trim(), username: link.input.value.trim().replace(/^@/, '') || null };
+        if (c.type === 'group' && forum !== !!c.is_forum) payload.is_forum = forum;
+        const { chat } = await api('PATCH', `/api/chats/${c.id}`, payload);
+        S.chats.set(chat.id, chat);
+        App.infoSide.pop(tab);
+        toast('ذخیره شد');
+      } catch (e) { toast(e.message); }
+    } },
   });
 };
-
-App.sessionsDialog = async () => {
-  try {
-    const { sessions } = await api('GET', '/api/sessions');
-    const list = h('div');
-    const paint = (items) => list.replaceChildren(...items.map((s) => h('div', { class: 'pick' },
-      h('span', { class: 'avatar s40 ' + (s.current ? 'g3' : 'g5') }, icon('devices')),
-      h('div', { class: 'body' }, h('div', { class: 'n' }, s.device + (s.current ? ' (این دستگاه)' : '')),
-        h('div', { class: 's' }, `${s.ip || '—'} · ${s.current ? 'آنلاین' : 'آخرین فعالیت ' + fmtListTime(s.last_active)}`)),
-      s.current ? null : ibtn('close', 'خاتمه نشست', async () => {
-        try { await api('DELETE', `/api/sessions/${s.id}`); paint((await api('GET', '/api/sessions')).sessions); } catch (e) { toast(e.message); }
-      }))));
-    paint(sessions);
-    UI.modal({
-      title: 'دستگاه‌های فعال',
-      body: [list],
-      foot: sessions.length > 1 ? [h('button', { class: 'btn danger', onclick: async () => {
-        if (!(await UI.ask('خاتمه همه نشست‌ها', 'از همه دستگاه‌های دیگر خارج می‌شوید.', 'خاتمه', true))) return;
-        try { await api('POST', '/api/sessions/terminate-others'); paint((await api('GET', '/api/sessions')).sessions); toast('انجام شد'); } catch (e) { toast(e.message); }
-      } }, 'خاتمه همه نشست‌های دیگر')] : null,
-    });
-  } catch (e) { toast(e.message); }
-};
-
-App.passwordDialog = () => {
-  const cur = UI.field('رمز فعلی', { type: 'password', dir: 'ltr', autocomplete: 'current-password' });
-  const next = UI.field('رمز جدید', { type: 'password', dir: 'ltr', autocomplete: 'new-password', minlength: 8 }, 'حداقل ۸ کاراکتر. بقیه دستگاه‌ها خارج می‌شوند.');
-  const btn = h('button', { class: 'btn flat' }, 'تغییر رمز');
-  const m = UI.modal({ title: 'تغییر رمز عبور', body: [cur, next], foot: [btn, h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف')] });
-  btn.addEventListener('click', async () => {
-    try {
-      await api('POST', '/api/me/password', { current_password: cur.input.value, new_password: next.input.value });
-      m.close();
-      toast('رمز عوض شد');
-    } catch (e) { toast(e.message); }
-  });
-};
-
-App.boot();

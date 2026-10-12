@@ -6,6 +6,7 @@ const repo = require('./db');
 const auth = require('./auth');
 const hub = require('./hub');
 const service = require('./service');
+const calls = require('./calls');
 const config = require('./config');
 const { acceptUpgrade, rejectUpgrade } = require('./ws');
 const { HttpError, rateLimit, clientIp } = require('./http-util');
@@ -29,11 +30,15 @@ const handlers = {
     return service.react(ws.user, m.message_id, m.emoji ?? null);
   },
   vote: (ws, m) => service.vote(ws.user, m.message_id, m.option ?? null),
-  read: (ws, m) => service.markRead(ws.user, m.chat_id, m.message_id),
+  read: (ws, m) => service.markRead(ws.user, m.chat_id, m.message_id, m.topic_id),
   typing: (ws, m) => {
     rateLimit(`typing:${ws.user.id}`, 30, 10_000);
-    service.typing(ws.user, m.chat_id, m.action);
+    service.typing(ws.user, m.chat_id, m.action, m.topic_id);
   },
+  call_request: (ws, m) => calls.request(ws, m),
+  call_accept: (ws, m) => calls.accept(ws, m),
+  call_signal: (ws, m) => calls.signal(ws, m),
+  call_hangup: (ws, m) => calls.hangup(ws, m),
   ping: (ws) => ws.send({ type: 'pong', time: Date.now() }),
 };
 
@@ -61,10 +66,10 @@ function handleUpgrade(req, socket, head) {
 
   ws.on('binary', () => ws.close(1003));
   ws.on('message', (raw) => {
-    // crude flood protection: 60 frames / 10s per connection
+    // crude flood protection: 120 frames / 10s per connection (calls send ICE candidates in bursts)
     const now = Date.now();
     if (now - windowStart > 10_000) { windowStart = now; frames = 0; }
-    if (++frames > 60) return ws.close(1008);
+    if (++frames > 120) return ws.close(1008);
 
     let msg;
     try { msg = JSON.parse(raw); } catch { msg = null; }
@@ -102,6 +107,7 @@ function handleUpgrade(req, socket, head) {
   ws.on('close', () => {
     clearTimeout(authTimer);
     if (!ws.user) return;
+    calls.onSocketClose(ws);
     if (hub.remove(ws.user.id, ws)) {
       repo.touchUser(ws.user.id);
       service.broadcastPresence(ws.user.id);

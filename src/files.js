@@ -115,4 +115,14 @@ function serve(req, res, id) {
   });
 }
 
-module.exports = { upload, serve, fileUrl, isImage, isVideo, isAudio };
+// store an in-memory buffer (server-side downloads such as GIF search results)
+function saveBuffer(ownerId, buf, mimeRaw, nameRaw) {
+  const id = crypto.randomBytes(16).toString('hex');
+  const mime = cleanMime(mimeRaw);
+  const name = cleanName(nameRaw);
+  fs.writeFileSync(path.join(config.uploadsDir, id), buf, { flag: 'wx' });
+  repo.insertFile(id, ownerId, mime, buf.length, name, Date.now());
+  return { id, url: fileUrl(id), mime, size: buf.length, name };
+}
+
+module.exports = { upload, serve, fileUrl, isImage, isVideo, isAudio, saveBuffer };

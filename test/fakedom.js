@@ -119,7 +119,7 @@ class Element extends Node {
     this.tagName = tag.toUpperCase();
     this.attributes = {};
     this.classList = new ClassList(this);
-    this.style = new Proxy({ setProperty(k, v) { this[k] = v; } }, { get: (t, k) => (k in t ? t[k] : ''), set: (t, k, v) => ((t[k] = v), true) });
+    this.style = new Proxy({ setProperty(k, v) { this[k] = v; }, removeProperty(k) { delete this[k]; }, getPropertyValue(k) { return this[k] || ''; } }, { get: (t, k) => (k in t ? t[k] : ''), set: (t, k, v) => ((t[k] = v), true) });
     const self = this;
     this.dataset = new Proxy({}, {
       get: (_, k) => self.getAttribute('data-' + String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())) ?? undefined,

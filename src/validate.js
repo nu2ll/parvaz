@@ -90,5 +90,5 @@ function poll(v) {
 
 module.exports = {
   username, publicName, password, displayName, title, bio, description, messageText, caption,
-  id, ids, lookupName, fileId, poll, bad,
+  id, ids, lookupName, fileId, poll, bad, line, multiline,
 };

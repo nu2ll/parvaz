@@ -87,6 +87,11 @@ function client(token) {
   ok((await call('DELETE', `/api/sessions/${other.id}`, null, S)).status === 200, 'terminate other session');
   ok((await call('GET', '/api/me', null, S0)).status === 401, 'terminated session is dead');
 
+  const st = await call('PATCH', '/api/me/settings', { theme: 'dark', folders: [{ id: 1, title: 'کار', include: ['groups'] }] }, A);
+  ok(st.data.settings.theme === 'dark' && st.data.settings.folders.length === 1, 'synced settings + folders saved');
+  ok((await call('PATCH', '/api/me/settings', { hacker: 1 }, A)).status === 400, 'unknown setting rejected');
+  ok((await call('GET', '/api/me/settings', null, A)).data.settings.folders[0].title === 'کار', 'settings read back');
+
   console.log('uploads');
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082', 'hex');
   const up = await call('POST', '/api/files?name=' + encodeURIComponent('عکس.png'), undefined, A, { data: png, type: 'image/png' });

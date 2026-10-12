@@ -1,6 +1,11 @@
 'use strict';
 /* Kabootar web client — core: DOM helpers, icons, API, formatting, state. */
 
+// tolerate null/false children in native append-style calls (conditional UI pieces)
+if (typeof Element !== 'undefined') for (const k of ['append', 'prepend', 'replaceChildren', 'before', 'after']) {
+  const orig = Element.prototype[k];
+  if (orig && !orig.__kb) { const f = function (...a) { return orig.apply(this, a.filter((x) => x != null && x !== false)); }; f.__kb = true; Element.prototype[k] = f; }
+}
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -75,6 +80,47 @@ const ICONS = {
   shield: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z',
   unread: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-13c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z',
   key: 'M12.65 10A5.99 5.99 0 0 0 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6a5.99 5.99 0 0 0 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
+  phone: 'M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+  callEnd: 'M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.956.956 0 0 1-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z',
+  micOff: 'M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z',
+  videoOff: 'M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z',
+  screen: 'M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.11-.9-2-2-2H4c-1.11 0-2 .89-2 2v10c0 1.1.89 2 2 2H0v2h24v-2h-4zm-7-3.53v-2.19c-2.78 0-4.61.85-6 2.72.56-2.67 2.11-5.33 6-5.87V7l4 3.73-4 3.74z',
+  flipCam: 'M20 4h-3.17L15 2H9L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 11.5V13H9v2.5L5.5 12 9 8.5V11h6V8.5l3.5 3.5-3.5 3.5z',
+  sticker: 'M18.5 2h-13A3.5 3.5 0 0 0 2 5.5v13A3.5 3.5 0 0 0 5.5 22H14l8-8V5.5A3.5 3.5 0 0 0 18.5 2zM14 20v-3.5a2.5 2.5 0 0 1 2.5-2.5H20l-6 6zM8.5 11a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm7 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM12 16.5c-2.33 0-4.31-1.46-5.11-3.5h10.22c-.8 2.04-2.78 3.5-5.11 3.5z',
+  gif: 'M11.5 9H13v6h-1.5zM9 9H6c-.6 0-1 .5-1 1v4c0 .5.4 1 1 1h3c.6 0 1-.5 1-1v-2H8.5v1.5h-2v-3H10V10c0-.5-.4-1-1-1zm10 1.5V9h-4.5v6H16v-2h2v-1.5h-2v-1z',
+  contacts: 'M20 0H4v2h16V0zM4 24h16v-2H4v2zM20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 2.75c1.24 0 2.25 1.01 2.25 2.25s-1.01 2.25-2.25 2.25S9.75 10.24 9.75 9 10.76 6.75 12 6.75zM17 17H7v-1.5c0-1.67 3.33-2.5 5-2.5s5 .83 5 2.5V17z',
+  palette: 'M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z',
+  data: 'M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z',
+  folder: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
+  chevron: 'M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z',
+  block: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9A7.902 7.902 0 0 1 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1A7.902 7.902 0 0 1 20 12c0 4.42-3.58 8-8 8z',
+  select: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+  timer: 'M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42A8.962 8.962 0 0 0 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z',
+  story: 'M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2zm1 0v2.06A8 8 0 0 1 19.94 11H22A10 10 0 0 0 13 2zm-2 6v3H8v2h3v3h2v-3h3v-2h-3V8h-2z',
+  heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
+  heartO: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
+  zoomIn: 'M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zm2.5-4h-2v2H9v-2H7V9h2V7h1v2h2v1z',
+  globe: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.987 7.987 0 0 1 5.08 16zm2.95-8H5.08a7.987 7.987 0 0 1 4.33-3.56A15.65 15.65 0 0 0 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2s.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z',
+  topic: 'M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z',
+  hash: 'M20 10V8h-4V4h-2v4h-4V4H8v4H4v2h4v4H4v2h4v4h2v-4h4v4h2v-4h4v-2h-4v-4h4zm-6 4h-4v-4h4v4z',
+  unlock: 'M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z',
+  callIn: 'M20 5.41L18.59 4 7 15.59V9H5v10h10v-2H8.41z',
+  callOut: 'M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z',
+  volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
+  fullscreen: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
+  music: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
+  textSize: 'M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z',
+  keyboard: 'M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z',
+  clock: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
+  minimize: 'M6 19h12v2H6z',
+  arrowUp: 'M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z',
+  install: 'M18 15v3H6v-3H4v3c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-3h-2zm-1-4l-1.41-1.41L13 12.17V4h-2v8.17L8.41 9.59 7 11l5 5 5-5z',
+  saved: 'M19 3H5c-1.1 0-2 .9-2 2v14l4-4h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z',
+  bot: 'M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zM7.5 11.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9.83 13 9 13s-1.5-.67-1.5-1.5zM16 17H8v-2h8v2zm-1-4c-.83 0-1.5-.67-1.5-1.5S14.17 10 15 10s1.5.67 1.5 1.5S15.83 13 15 13z',
+  addCircle: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z',
+  closeCircle: 'M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z',
+  undo: 'M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z',
+  stop: 'M6 6h12v12H6z',
 };
 const SVGNS = 'http://www.w3.org/2000/svg';
 function icon(name, cls) {
@@ -88,7 +134,8 @@ function icon(name, cls) {
   return s;
 }
 const ibtn = (name, title, onclick, cls) =>
-  h('button', { class: 'ibtn' + (cls ? ' ' + cls : ''), title, 'aria-label': title, type: 'button', onclick }, icon(name, name === 'back' || name === 'send' ? 'flip' : ''));
+  h('button', { class: 'ibtn' + (cls ? ' ' + cls : ''), title, 'aria-label': title, type: 'button', onclick }, icon(name, name === 'send' || name === 'chevron' ? 'flip' : ''));
+const raf = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(fn, 16));
 
 /* ---------- state ---------- */
 const store = (k, def) => { try { const v = localStorage.getItem('kb_' + k); return v == null ? def : JSON.parse(v); } catch { return def; } };
@@ -108,8 +155,21 @@ const S = {
   reply: null, edit: null,
   drafts: store('drafts', {}),
   pending: new Map(), // localId -> pending upload
-  settings: Object.assign({ theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', notify: true, sound: true }, store('settings', {})),
+  settings: Object.assign({
+    theme: 'system', accent: 'default', text_size: 16, background: null, time_format: '24', send_key: 'enter', animations: true,
+    large_emoji: true, autoplay_gif: true, autoplay_video: true, auto_download: { photo: true, video: true, file: true },
+    notify: true, sound: true, notify_private: true, notify_group: true, notify_channel: true, notify_preview: true,
+    suggest_stickers: true, loop_stickers: true, folders: null, stories_hidden: false, stickers_recent: [],
+  }, store('settings', {})),
   recentEmoji: store('recentEmoji', []),
+  topic: null, // active forum topic id (0 = General) or null
+  topics: new Map(), // chatId -> Map(topicId -> topic)
+  contacts: null,
+  stickers: null, // installed packs
+  gifs: null,
+  stories: null, // feed
+  select: null, // Set of selected message ids (select mode)
+  calls: null,
 };
 
 /* ---------- API ---------- */
@@ -128,6 +188,22 @@ const ERRORS = {
   group_full: 'ظرفیت گروه پر است',
   cannot_leave_private: 'گفتگوی خصوصی را باید حذف کنید',
   network: 'اتصال به سرور برقرار نشد',
+  blocked: 'این کاربر پیام‌های شما را محدود کرده',
+  you_blocked: 'اول این کاربر را از مسدودی دربیاورید',
+  privacy_restricted: 'تنظیمات حریم خصوصی این کاربر اجازه نمی‌دهد',
+  invalid_2fa: 'رمز تأیید دومرحله‌ای اشتباه است',
+  login_expired: 'زمان ورود تمام شد، دوباره تلاش کنید',
+  topic_closed: 'این تاپیک بسته شده',
+  topic_not_found: 'تاپیک پیدا نشد',
+  not_a_forum: 'تاپیک‌ها در این گروه فعال نیست',
+  sticker_not_found: 'استیکر پیدا نشد',
+  pack_not_found: 'بسته‌ی استیکر پیدا نشد',
+  pack_name_taken: 'این نام کوتاه قبلاً گرفته شده',
+  story_not_found: 'استوری پیدا نشد یا منقضی شده',
+  already_in_call: 'شما الان در تماس هستید',
+  call_not_found: 'تماس پیدا نشد',
+  gif_search_failed: 'جستجوی GIF الان در دسترس نیست',
+  file_not_found: 'فایل پیدا نشد',
 };
 const VALIDATION_FA = [
   [/Username must be/, 'نام کاربری باید ۴ تا ۳۲ حرف انگلیسی/عدد/_ باشد و با حرف شروع شود'],
@@ -140,6 +216,13 @@ const VALIDATION_FA = [
   [/poll needs/, 'نظرسنجی باید ۲ تا ۱۰ گزینه داشته باشد'],
   [/must be unique/, 'گزینه‌ها نباید تکراری باشند'],
   [/Avatar must be/, 'عکس پروفایل باید JPG، PNG، GIF یا WebP باشد'],
+  [/Short name must be/, 'نام کوتاه باید ۴ تا ۳۲ حرف انگلیسی/عدد/_ باشد'],
+  [/Stickers must be/, 'استیکر باید عکس PNG، WebP، GIF یا JPEG باشد'],
+  [/story must be/, 'استوری باید عکس یا ویدیو باشد'],
+  [/Hint must not/, 'راهنما نباید خود رمز باشد'],
+  [/Topics are only/, 'تاپیک فقط در گروه‌ها فعال می‌شود'],
+  [/Calls are available/, 'تماس فقط در گفتگوی خصوصی ممکن است'],
+  [/cannot call yourself/, 'نمی‌توانید با خودتان تماس بگیرید'],
 ];
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code; } }
 function errorText(code, msg) {
@@ -193,7 +276,8 @@ function uploadFile(file, name, onProgress) {
 const fa = (n) => Number(n).toLocaleString('fa-IR');
 const sameDay = (a, b) => a.toDateString() === b.toDateString();
 function fmtTime(ts) {
-  return new Date(ts).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const h12 = S.settings.time_format === '12';
+  return new Date(ts).toLocaleTimeString('fa-IR', { hour: h12 ? 'numeric' : '2-digit', minute: '2-digit', hour12: h12 });
 }
 function fmtListTime(ts) {
   const d = new Date(ts);
@@ -246,6 +330,7 @@ function initials(name) {
   return (first + (second || '')).toUpperCase();
 }
 function isSaved(c) { return c && c.type === 'private' && c.peer && S.me && c.peer.id === S.me.id; }
+const userName = (u) => (u ? u.contact_name || u.display_name : '');
 function chatTitle(c) { return isSaved(c) ? 'پیام‌های ذخیره‌شده' : c.title; }
 
 // entity: { name, avatar, seed, saved, online }
@@ -260,6 +345,7 @@ function avatarEl(ent, size = '') {
     a.append(img);
   } else a.textContent = initials(ent.name);
   if (ent.online) a.classList.add('online');
+  if (ent.stories) a.classList.add('has-stories', ent.stories.unseen ? 'unseen' : 'seen');
   return a;
 }
 function chatAvatar(c, size) {
@@ -267,15 +353,17 @@ function chatAvatar(c, size) {
   return avatarEl({
     name: chatTitle(c), avatar: c.avatar, seed: c.type === 'private' ? c.peer.id : c.id * 7 + 3,
     online: c.type === 'private' && c.peer.online,
+    stories: c.type === 'private' && c.peer.stories && !S.settings.stories_hidden ? c.peer.stories : null,
   }, size);
 }
-const userAvatar = (u, size) => avatarEl({ name: u.display_name, avatar: u.avatar, seed: u.id, online: u.online && u.id !== S.me?.id }, size);
+const userAvatar = (u, size, withStories) => avatarEl({ name: userName(u), avatar: u.avatar, seed: u.id, online: u.online && u.id !== S.me?.id, stories: withStories ? u.stories : null }, size);
 
 /* ---------- toast ---------- */
-function toast(msg) {
+function toast(msg, action) {
   let t = $('#toast');
   if (!t) document.body.append((t = h('div', { id: 'toast', class: 'toast', role: 'status' })));
   t.textContent = msg;
+  if (action) t.append(h('button', { type: 'button', onclick: () => { t.classList.remove('show'); action.onClick(); } }, action.label));
   t.classList.add('show');
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => t.classList.remove('show'), 3000);
@@ -294,9 +382,39 @@ async function copyText(text, msg = 'کپی شد') {
   toast(msg);
 }
 
+const ACCENTS = {
+  default: null, blue: '#3390ec', purple: '#8774e1', green: '#4fae4e', orange: '#f68136', pink: '#e8578d', cyan: '#3ab9c6', red: '#e15052', gold: '#c6a23a',
+};
+const darkMode = () => S.settings.theme === 'dark' || (S.settings.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
 function applyTheme() {
-  document.documentElement.dataset.theme = S.settings.theme;
-  $('meta[name=theme-color]')?.setAttribute('content', S.settings.theme === 'dark' ? '#212121' : '#ffffff');
+  const dark = darkMode();
+  const root = document.documentElement;
+  root.dataset.theme = dark ? 'dark' : 'light';
+  const accent = ACCENTS[S.settings.accent];
+  if (root.style.setProperty) {
+    if (accent) root.style.setProperty('--accent', accent); else root.style.removeProperty?.('--accent');
+    root.style.setProperty('--msg-size', (Number(S.settings.text_size) || 16) + 'px');
+  }
+  root.dataset.anim = S.settings.animations === false ? 'off' : 'on';
+  $('meta[name=theme-color]')?.setAttribute('content', dark ? '#212121' : '#ffffff');
+  if (typeof Wallpaper !== 'undefined') Wallpaper.apply();
 }
-function saveSettings() { save('settings', S.settings); }
+let settingsTimer = null, settingsDirty = {};
+function saveSettings(keys) {
+  save('settings', S.settings);
+  if (!keys || !S.token) return;
+  for (const k of [].concat(keys)) settingsDirty[k] = S.settings[k] ?? null;
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(() => {
+    const body = settingsDirty;
+    settingsDirty = {};
+    api('PATCH', '/api/me/settings', body).catch(() => {});
+  }, 600);
+}
+function setSetting(key, value) {
+  S.settings[key] = value;
+  saveSettings(key);
+  if (['theme', 'accent', 'text_size', 'animations', 'background'].includes(key)) applyTheme();
+}
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (S.settings.theme === 'system') applyTheme(); }); } catch {}
 applyTheme();

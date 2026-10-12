@@ -1,0 +1,70 @@
+{
+ "short_name": "kabootar",
+ "title": "کبوتر",
+ "stickers": [
+  {
+   "file": "01.svg",
+   "emoji": "👋"
+  },
+  {
+   "file": "02.svg",
+   "emoji": "❤️"
+  },
+  {
+   "file": "03.svg",
+   "emoji": "😂"
+  },
+  {
+   "file": "04.svg",
+   "emoji": "😢"
+  },
+  {
+   "file": "05.svg",
+   "emoji": "😡"
+  },
+  {
+   "file": "06.svg",
+   "emoji": "😎"
+  },
+  {
+   "file": "07.svg",
+   "emoji": "🤔"
+  },
+  {
+   "file": "08.svg",
+   "emoji": "😴"
+  },
+  {
+   "file": "09.svg",
+   "emoji": "👍"
+  },
+  {
+   "file": "10.svg",
+   "emoji": "🎉"
+  },
+  {
+   "file": "11.svg",
+   "emoji": "😮"
+  },
+  {
+   "file": "12.svg",
+   "emoji": "✉️"
+  },
+  {
+   "file": "13.svg",
+   "emoji": "☕"
+  },
+  {
+   "file": "14.svg",
+   "emoji": "🙏"
+  },
+  {
+   "file": "15.svg",
+   "emoji": "😘"
+  },
+  {
+   "file": "16.svg",
+   "emoji": "🌙"
+  }
+ ]
+}
