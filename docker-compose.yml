@@ -1,0 +1,14 @@
+services:
+  kabootar:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - TRUST_PROXY=1
+      - DB_PATH=/data/chat.db
+      # - ALLOWED_ORIGINS=https://chat.example.com
+    volumes:
+      - kabootar-data:/data
+volumes:
+  kabootar-data:

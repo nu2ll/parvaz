@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17212b">
+  <title>کبوتر</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <section id="auth" class="auth" hidden>
+    <form id="auth-form" class="card" autocomplete="on">
+      <img class="logo" src="/icon.svg" alt="">
+      <h1 id="auth-title">ورود به کبوتر</h1>
+      <label>نام کاربری
+        <input name="username" autocomplete="username" required dir="ltr" maxlength="32" placeholder="username">
+      </label>
+      <label id="field-display" hidden>نام نمایشی
+        <input name="display_name" maxlength="64" placeholder="مثلاً آروون">
+      </label>
+      <label>رمز عبور
+        <input name="password" type="password" autocomplete="current-password" required dir="ltr" minlength="8" maxlength="128">
+      </label>
+      <button type="submit" id="auth-submit" class="primary">ورود</button>
+      <button type="button" id="auth-toggle" class="link">حساب ندارید؟ ثبت‌نام کنید</button>
+    </form>
+  </section>
+
+  <section id="main" class="main" hidden>
+    <aside class="sidebar">
+      <header class="side-head">
+        <div class="me">
+          <span class="avatar" id="me-avatar"></span>
+          <div class="me-text"><div id="me-name" class="name"></div><div id="me-user" class="sub" dir="ltr"></div></div>
+        </div>
+        <div class="actions">
+          <button id="new-group" title="گروه جدید" aria-label="گروه جدید">👥</button>
+          <button id="logout" title="خروج" aria-label="خروج">⏻</button>
+        </div>
+      </header>
+      <div class="search"><input id="search" type="search" placeholder="جستجوی کاربر با نام یا @username" autocomplete="off"></div>
+      <div id="search-results" class="list" hidden></div>
+      <div id="chat-list" class="list"></div>
+      <div id="conn" class="conn"></div>
+    </aside>
+
+    <main class="chat">
+      <div class="empty" id="empty">یک گفتگو را انتخاب کنید</div>
+      <header class="chat-head" id="chat-head" hidden>
+        <button id="back" class="back" aria-label="بازگشت">→</button>
+        <span class="avatar" id="chat-avatar"></span>
+        <div class="info"><div id="chat-title" class="name" dir="auto"></div><div id="chat-status" class="sub"></div></div>
+        <button id="add-member" title="افزودن عضو" aria-label="افزودن عضو" hidden>➕</button>
+        <button id="leave" title="ترک گروه" aria-label="ترک گروه" hidden>🚪</button>
+      </header>
+      <div id="messages" class="messages" hidden></div>
+      <div id="reply-bar" class="reply-bar" hidden>
+        <div class="reply-body"><div id="reply-label" class="reply-label"></div><div id="reply-text" class="reply-text" dir="auto"></div></div>
+        <button id="reply-cancel" aria-label="لغو">✕</button>
+      </div>
+      <form id="composer" class="composer" hidden>
+        <textarea id="input" rows="1" placeholder="پیام..." maxlength="4096" dir="auto"></textarea>
+        <button type="submit" class="send" aria-label="ارسال">➤</button>
+      </form>
+    </main>
+  </section>
+
+  <dialog id="group-dialog">
+    <form id="group-form" class="card">
+      <h2>گروه جدید</h2>
+      <label>نام گروه<input name="title" required maxlength="128"></label>
+      <label>اعضا (نام‌های کاربری، جدا با کاما)<input name="members" dir="ltr" placeholder="sara, reza"></label>
+      <div class="row">
+        <button type="submit" value="cancel" formnovalidate class="link">انصراف</button>
+        <button type="submit" value="ok" class="primary">ساخت گروه</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
