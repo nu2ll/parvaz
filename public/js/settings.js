@@ -3,39 +3,57 @@
 
 const PRIVACY_LABELS = { everybody: 'همه', contacts: 'مخاطبین من', nobody: 'هیچ‌کس' };
 
+// Web K 2.2 settings: centered profile, rounded cards, coloured squircle icons
+const SQ = { red: '#ef5b5b', green: '#4fbe5a', blue: '#3d9cf5', slate: '#7d8e9c', gray: '#8a949e', pink: '#f2477a', purple: '#8e6cf1', orange: '#f5a524', teal: '#2bb5a8' };
+const crow = (ic, color, label, sub, onClick, end, cls) => {
+  const r = UI.row(null, label, sub, onClick, 'sq-row' + (cls ? ' ' + cls : ''), end);
+  r.prepend(h('span', { class: 'sq', style: { background: SQ[color] || color } }, icon(ic)));
+  return r;
+};
 App.openSettings = (page) => {
-  const me = S.me;
   const body = h('div', { class: 'settings' });
+  let expanded = false;
+  let devices = null;
   const paint = () => {
     const me2 = S.me;
-    const avatar = me2.avatar
-      ? h('div', { class: 'info-photo settings-photo', onclick: () => App.settingsPage('profile') }, h('img', { src: me2.avatar, alt: '' }),
-        h('div', { class: 'ip-over' }, h('div', { class: 't', dir: 'auto' }, me2.display_name), h('div', { class: 'st' }, 'آنلاین')))
-      : h('div', { class: 'info-top' }, userAvatar(me2, 's120'), h('div', { class: 't', dir: 'auto' }, me2.display_name), h('div', { class: 'st accent' }, 'آنلاین'));
+    const name = h('div', { class: 't', dir: 'auto' }, me2.display_name, me2.verified ? R.verified() : null);
+    const top = expanded && me2.avatar
+      ? h('div', { class: 'info-photo settings-photo', onclick: () => { expanded = false; paint(); } }, h('img', { src: me2.avatar, alt: '' }),
+        h('div', { class: 'ip-over' }, name, h('div', { class: 'st' }, 'آنلاین')))
+      : h('div', { class: 'profile-top' }, h('div', { class: 'pt-av', onclick: () => { if (me2.avatar) { expanded = true; paint(); } else App.settingsPage('profile'); } }, userAvatar(me2, 's120')),
+        name, h('div', { class: 'st' }, 'آنلاین'));
     body.replaceChildren(
-      avatar,
+      top,
       UI.section(null, [
-        UI.row('at', '@' + me2.username, 'نام کاربری', () => App.settingsPage('profile')),
-        UI.row('info', me2.bio || 'بیوگرافی ندارید', 'بیوگرافی', () => App.settingsPage('profile'), 'multi'),
+        crow('at', 'blue', me2.username, 'نام کاربری', () => App.settingsPage('profile'), null, 'ltr-n'),
+        crow('info', 'slate', me2.bio || 'افزودن بیوگرافی', 'بیوگرافی', () => App.settingsPage('profile'), null, 'multi'),
       ]),
       UI.section(null, [
-        UI.row('edit', 'ویرایش پروفایل', null, () => App.settingsPage('profile')),
-        UI.row('bell', 'اعلان‌ها و صداها', null, () => App.settingsPage('notifications')),
-        UI.row('data', 'داده و حافظه', null, () => App.settingsPage('data')),
-        UI.row('lock', 'حریم خصوصی و امنیت', null, () => App.settingsPage('privacy')),
-        UI.row('settings', 'تنظیمات عمومی', null, () => App.settingsPage('general')),
-        UI.row('folder', 'پوشه‌های گفتگو', null, () => App.settingsPage('folders')),
-        UI.row('sticker', 'استیکرها و اموجی‌ها', null, () => App.settingsPage('stickers')),
-        UI.row('devices', 'دستگاه‌ها', null, () => App.settingsPage('sessions')),
-        UI.row('globe', 'زبان', 'فارسی', () => App.settingsPage('language')),
+        crow('bell', 'red', 'اعلان‌ها و صداها', null, () => App.settingsPage('notifications')),
+        crow('data', 'green', 'داده و حافظه', null, () => App.settingsPage('data')),
+        crow('key', 'slate', 'حریم خصوصی و امنیت', null, () => App.settingsPage('privacy')),
+        crow('settings', 'gray', 'تنظیمات عمومی', null, () => App.settingsPage('general')),
+        crow('folder', 'blue', 'پوشه‌های گفتگو', null, () => App.settingsPage('folders')),
+        crow('heart', 'pink', 'استیکرها و اموجی‌ها', null, () => App.settingsPage('stickers')),
+        crow('devices', 'blue', 'دستگاه‌ها', null, () => App.settingsPage('sessions'), devices != null ? fa(devices) : null),
+        crow('globe', 'purple', 'زبان', null, () => App.settingsPage('language'), 'فارسی'),
+        crow('keyboard', 'orange', 'میانبرهای صفحه‌کلید', null, () => App.settingsPage('shortcuts')),
       ]),
-      h('div', { class: 'settings-foot' }, `کبوتر وب ${App.version()}، بدون هیچ وابستگی`));
+      UI.section(null, [
+        crow('phone', 'green', 'تماس‌ها', null, () => App.openCalls()),
+        crow('bookmark', 'blue', 'پیام‌های ذخیره‌شده', null, () => App.openSaved()),
+        crow('help', 'teal', 'امکانات کبوتر', null, () => App.openByUsername('kabootar')),
+      ]),
+      h('div', { class: 'settings-foot' }, `کبوتر وب ${App.version()}`));
   };
   paint();
+  api('GET', '/api/sessions').then((r) => { devices = r.sessions.length; paint(); }).catch(() => {});
   const tab = App.side.push({
-    title: 'تنظیمات', body, cls: 'settings-tab',
-    actions: [ibtn('edit', 'ویرایش پروفایل', () => App.settingsPage('profile')),
-      ibtn('more', 'بیشتر', (e) => UI.menu([{ icon: 'logout', label: 'خروج از حساب', danger: true, onClick: async () => { if (await UI.ask('خروج', 'از حساب خود خارج می‌شوید؟', 'خروج', true)) App.logout(false); } }], { anchor: e.currentTarget, alignStart: true }))],
+    title: 'تنظیمات', body, cls: 'settings-tab main-settings',
+    actions: [ibtn('more', 'بیشتر', (e) => UI.menu([
+      { icon: 'oEdit', label: 'ویرایش پروفایل', onClick: () => App.settingsPage('profile') },
+      { icon: 'oLogout', label: 'خروج از حساب', danger: true, onClick: async () => { if (await UI.ask('خروج', 'از حساب خود خارج می‌شوید؟', 'خروج', true)) App.logout(false); } },
+    ], { anchor: e.currentTarget }))],
     onShow: paint,
   });
   App.settingsTab = tab;
@@ -55,6 +73,15 @@ App.settingsPage = (page, arg) => {
 const push = (title, body, extra = {}) => App.side.push({ title, body, cls: 'settings-tab', ...extra });
 
 const SETTINGS_PAGES = {
+  /* ---------- keyboard shortcuts ---------- */
+  shortcuts() {
+    const k = (keys, what) => h('div', { class: 'set-row static kb-row' }, h('div', { class: 'body' }, h('div', { class: 'n' }, what)), h('span', { class: 'kbd-wrap', dir: 'ltr' }, keys.map((x) => h('kbd', {}, x))));
+    push('میانبرهای صفحه‌کلید', [
+      UI.section('نوشتن پیام', [k(['Enter'], 'ارسال'), k(['Shift', 'Enter'], 'خط جدید'), k(['↑'], 'ویرایش آخرین پیام'), k(['Ctrl', 'B'], 'پررنگ'), k(['Ctrl', 'I'], 'کج'), k(['Ctrl', 'K'], 'افزودن لینک'), k(['Esc'], 'لغو پاسخ یا ویرایش')]),
+      UI.section('عمومی', [k(['Esc'], 'بستن پنجره یا منو'), k(['Ctrl', 'F'], 'جستجو در گفتگو')]),
+    ]);
+  },
+
   /* ---------- edit profile ---------- */
   profile() {
     const me = S.me;

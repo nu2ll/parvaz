@@ -7,12 +7,54 @@ const UI = {};
 let openMenuEl = null;
 UI.closeMenu = () => {
   if (!openMenuEl) return;
-  const { menu, backdrop, extra } = openMenuEl;
+  const { menu, backdrop, extra, onClose } = openMenuEl;
   openMenuEl = null;
-  menu.classList.add('hide');
-  extra?.classList.add('hide');
+  const subs = [...document.querySelectorAll('.menu.sub')];
+  for (const x of [menu, extra, ...subs]) x?.classList.add('hide');
   backdrop.remove();
-  setTimeout(() => { menu.remove(); extra?.remove(); }, 120);
+  setTimeout(() => { menu.remove(); extra?.remove(); subs.forEach((x) => x.remove()); }, 120);
+  try { onClose && onClose(); } catch {}
+};
+const menuItem = (it) => h('button', {
+  class: 'mi' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : ''), role: 'menuitem', type: 'button',
+  onclick: (e) => {
+    e.stopPropagation();
+    if (it.submenu) return UI.subMenu(it.submenu(), e.currentTarget, it.foot);
+    if (!it.keepOpen) UI.closeMenu();
+    it.onClick && it.onClick(e);
+  },
+}, it.icon ? icon(it.icon) : it.avatar || null, h('span', { class: 'ml' }, it.label),
+it.badge ? h('span', { class: 'mbadge' }, it.badge) : null,
+it.sub ? h('span', { class: 'ms' }, it.sub) : null,
+it.toggle != null ? h('span', { class: 'switch toggle' + (it.toggle ? ' on' : '') }) : null,
+it.checked ? icon('check', 'mc') : null,
+it.submenu ? icon('chevron', 'chev') : null);
+const fillMenu = (menu, items) => {
+  for (const it of items) {
+    if (!it) continue;
+    if (it === 'sep') { if (menu.lastChild && !menu.lastChild.classList?.contains('sep')) menu.append(h('div', { class: 'sep' })); continue; }
+    menu.append(menuItem(it));
+  }
+  if (menu.lastChild?.classList?.contains('sep')) menu.lastChild.remove();
+};
+// Web K "More ›" submenu: opens beside the parent menu, overlapping it on narrow screens
+UI.subMenu = (items, anchorItem, foot) => {
+  document.querySelectorAll('.menu.sub').forEach((x) => x.remove());
+  const sub = h('div', { class: 'menu sub', role: 'menu' });
+  fillMenu(sub, items);
+  if (foot) sub.append(h('div', { class: 'menu-foot' }, foot));
+  document.body.append(sub);
+  const parent = anchorItem.closest('.menu').getBoundingClientRect();
+  const a = anchorItem.getBoundingClientRect();
+  const w = sub.offsetWidth || 260, hh = sub.offsetHeight || 200;
+  let x = parent.left - w + 70;
+  if (x < 8) x = Math.min(parent.right - 70, innerWidth - w - 8);
+  x = Math.max(8, Math.min(x, innerWidth - w - 8));
+  let y = Math.max(8, Math.min(a.top - 8, innerHeight - hh - 8));
+  sub.style.left = x + 'px';
+  sub.style.top = y + 'px';
+  sub.style.transformOrigin = 'right top';
+  return sub;
 };
 // items: [{ icon, label, onClick, danger, toggle, sub, checked }|'sep'], opts: { x, y, anchor, head, reactions: Node, up, alignStart }
 UI.menu = (items, opts = {}) => {
@@ -20,23 +62,13 @@ UI.menu = (items, opts = {}) => {
   const menu = h('div', { class: 'menu', role: 'menu' });
   if (opts.head) menu.append(opts.head);
   if (opts.quick) menu.append(opts.quick);
-  for (const it of items) {
-    if (!it) continue;
-    if (it === 'sep') { if (menu.lastChild && !menu.lastChild.classList?.contains('sep')) menu.append(h('div', { class: 'sep' })); continue; }
-    menu.append(h('button', {
-      class: 'mi' + (it.danger ? ' danger' : ''), role: 'menuitem', type: 'button',
-      onclick: (e) => { e.stopPropagation(); if (!it.keepOpen) UI.closeMenu(); it.onClick && it.onClick(e); },
-    }, it.icon ? icon(it.icon) : null, h('span', { class: 'ml' }, it.label),
-    it.sub ? h('span', { class: 'ms' }, it.sub) : null,
-    it.toggle != null ? h('span', { class: 'switch toggle' + (it.toggle ? ' on' : '') }) : null,
-    it.checked ? icon('check', 'mc') : null));
-  }
-  if (menu.lastChild?.classList?.contains('sep')) menu.lastChild.remove();
+  if (opts.cls) menu.classList.add(...opts.cls.split(' '));
+  fillMenu(menu, items);
   const backdrop = h('div', { class: 'backdrop', onmousedown: (e) => { e.preventDefault(); UI.closeMenu(); }, oncontextmenu: (e) => { e.preventDefault(); UI.closeMenu(); } });
   const extra = opts.reactions || null;
   document.body.append(backdrop, menu);
   if (extra) document.body.append(extra);
-  openMenuEl = { menu, backdrop, extra };
+  openMenuEl = { menu, backdrop, extra, onClose: opts.onClose };
   // offsetWidth ignores the opening scale animation (getBoundingClientRect would under-measure and clip the menu)
   const r = { width: menu.offsetWidth || menu.getBoundingClientRect().width, height: menu.offsetHeight || menu.getBoundingClientRect().height };
   let x, y, originX;

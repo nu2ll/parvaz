@@ -146,11 +146,14 @@ App.buildShell = () => {
     h('span', { class: 'burger' }, h('i'), h('i'), h('i')));
   el.lockBtn = ibtn('lock', 'قفل', () => Lock.lockNow(), 'lock-btn');
   el.lockBtn.hidden = !(typeof Lock !== 'undefined' && Lock.enabled());
-  el.fabNew = h('button', { class: 'fab fab-new', title: 'گفتگوی جدید', type: 'button', onclick: (e) => App.newMenu(e.currentTarget) }, icon('edit'));
+  el.fabNew = h('button', { class: 'fab fab-new', title: 'گفتگوی جدید', type: 'button', onclick: (e) => App.newMenu(e.currentTarget) }, icon('edit', 'fab-ic'), icon('close', 'fab-x'));
+  // Web K 2.2: when the list scrolls, stories fold into a small stack inside the search pill
+  el.storyStack = h('button', { class: 'story-stack', type: 'button', title: 'استوری‌ها', hidden: true, onclick: () => { el.list.scrollTop = 0; el.mainTab.classList.remove('stories-collapsed'); } });
+  el.listWrap = h('div', { class: 'list-wrap' }, el.folders, el.list);
   el.mainTab = h('div', { class: 'stab main in' },
-    h('div', { class: 'side-head' }, el.menuBtn, h('div', { class: 'search-box' }, icon('search'), el.search,
-      h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close'))), el.lockBtn),
-    el.conn, el.storiesBar, el.folders, el.list, el.fabNew);
+    h('div', { class: 'side-head' }, el.menuBtn, h('div', { class: 'search-box' }, icon('oSearch'), el.search,
+      h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close')), el.storyStack), el.lockBtn),
+    el.conn, el.storiesBar, el.listWrap, el.fabNew);
   side.replaceChildren(el.mainTab);
   App.side = new UI.Slider(side, el.mainTab);
   let t;
@@ -161,46 +164,46 @@ App.buildShell = () => {
   App.buildChatArea();
   App.buildInfo();
 };
-App.version = () => String(S.config.version || '3.1.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+App.version = () => String(S.config.version || '3.2.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 App.searching = () => !!el.search?.value.trim() || document.activeElement === el.search;
 App.endSearch = () => { el.search.value = ''; el.search.blur(); $('#sidebar').classList.remove('searching'); App.renderSidebar(); };
 
+// Web K 2.2 main menu: account, saved/archive/stories/contacts, settings, "More ›" submenu
 App.mainMenu = () => {
   const me = S.me;
-  const archivedCount = App.sortedChats(true).length;
+  const archived = App.sortedChats(true);
+  const archivedUnread = archived.filter((c) => c.unread).length;
+  el.menuBtn.classList.add('open');
   UI.menu([
-    { icon: 'bookmark', label: 'پیام‌های ذخیره‌شده', onClick: () => App.openSaved() },
-    archivedCount ? { icon: 'archive', label: 'گفتگوهای بایگانی‌شده', sub: fa(archivedCount), onClick: () => App.openArchive() } : null,
-    { icon: 'story', label: 'استوری‌های من', onClick: () => Stories.openMine() },
-    { icon: 'contacts', label: 'مخاطبین', onClick: () => App.openContacts() },
-    { icon: 'phone', label: 'تماس‌ها', onClick: () => App.openCalls() },
-    { icon: 'settings', label: 'تنظیمات', onClick: () => App.openSettings() },
+    { avatar: h('span', { class: 'acc-ring' }, userAvatar(me, 's32')), label: [me.display_name, me.verified ? R.verified() : null], onClick: () => App.openSettings() },
     'sep',
-    { icon: 'moon', label: 'حالت شب', toggle: darkMode(), keepOpen: true, onClick: (e) => {
-      setSetting('theme', darkMode() ? 'light' : 'dark');
-      e.currentTarget.querySelector('.switch').classList.toggle('on', darkMode());
-    } },
-    { icon: 'palette', label: 'انیمیشن‌ها', toggle: S.settings.animations !== false, keepOpen: true, onClick: (e) => {
-      setSetting('animations', S.settings.animations === false);
-      e.currentTarget.querySelector('.switch').classList.toggle('on', S.settings.animations !== false);
-    } },
-    App.installPrompt ? { icon: 'install', label: 'نصب برنامه', onClick: () => { App.installPrompt.prompt(); App.installPrompt = null; } } : null,
-    typeof Lock !== 'undefined' && Lock.enabled() ? { icon: 'lock', label: 'قفل کردن', onClick: () => Lock.lockNow() } : null,
-  ], {
-    anchor: el.menuBtn,
-    head: h('div', { class: 'menu-head', onclick: () => { UI.closeMenu(); App.openSettings(); } },
-      userAvatar(me, 's40'), h('div', {}, h('div', { class: 'n' }, me.display_name, me.verified ? R.verified() : null), h('div', { class: 'u' }, '@' + me.username))),
-  });
-  const m = $('.menu');
-  m?.append(h('div', { class: 'menu-foot' }, `کبوتر وب ${App.version()}`));
+    { icon: 'oBookmark', label: 'پیام‌های ذخیره‌شده', onClick: () => App.openSaved() },
+    archived.length ? { icon: 'oArchive', label: 'گفتگوهای بایگانی‌شده', badge: archivedUnread ? fa(archivedUnread) : null, onClick: () => App.openArchive() } : null,
+    { icon: 'oStories', label: 'استوری‌های من', onClick: () => Stories.openMine() },
+    { icon: 'oUser', label: 'مخاطبین', onClick: () => App.openContacts() },
+    'sep',
+    { icon: 'oSettings', label: 'تنظیمات', onClick: () => App.openSettings() },
+    { icon: 'more', label: 'بیشتر', foot: `کبوتر وب ${App.version()}`, submenu: () => [
+      { icon: darkMode() ? 'oSun' : 'oMoon', label: darkMode() ? 'غیرفعال کردن حالت شب' : 'فعال کردن حالت شب', onClick: () => setSetting('theme', darkMode() ? 'light' : 'dark') },
+      { icon: 'oAnim', label: S.settings.animations === false ? 'فعال کردن انیمیشن‌ها' : 'غیرفعال کردن انیمیشن‌ها', onClick: () => setSetting('animations', S.settings.animations === false) },
+      'sep',
+      { icon: 'oPhone', label: 'تماس‌ها', onClick: () => App.openCalls() },
+      typeof Lock !== 'undefined' && Lock.enabled() ? { icon: 'oLock', label: 'قفل کردن', onClick: () => Lock.lockNow() } : null,
+      App.installPrompt ? { icon: 'oInstall', label: 'نصب برنامه', onClick: () => { App.installPrompt.prompt(); App.installPrompt = null; } } : null,
+      { icon: 'oHelp', label: 'امکانات کبوتر', onClick: () => App.openByUsername('kabootar') },
+    ] },
+  ], { anchor: el.menuBtn, cls: 'main-menu', onClose: () => el.menuBtn.classList.remove('open') });
 };
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); App.installPrompt = e; });
 
-App.newMenu = (anchor) => UI.menu([
-  { icon: 'channel', label: 'کانال جدید', onClick: () => App.newChatDialog('channel') },
-  { icon: 'group', label: 'گروه جدید', onClick: () => App.newChatDialog('group') },
-  { icon: 'user', label: 'گفتگوی خصوصی جدید', onClick: () => App.newPrivateDialog() },
-], { anchor, up: true });
+App.newMenu = (anchor) => {
+  anchor.classList.add('open');
+  UI.menu([
+    { icon: 'oChannel', label: 'کانال جدید', onClick: () => App.newChatDialog('channel') },
+    { icon: 'oGroup', label: 'گروه جدید', onClick: () => App.newChatDialog('group') },
+    { icon: 'oUser', label: 'گفتگوی خصوصی جدید', onClick: () => App.newPrivateDialog() },
+  ], { anchor, up: true, cls: 'fab-menu', onClose: () => anchor.classList.remove('open') });
+};
 
 App.loadChats = async () => {
   const { chats } = await api('GET', '/api/chats');
@@ -245,6 +248,7 @@ App.renderSidebar = () => {
   if (App.archiveTab) App.renderArchive();
   if (App.searching()) {
     el.folders.hidden = true;
+    el.listWrap.classList.remove('has-folders');
     el.storiesBar.hidden = true;
     return q ? App.renderSearch(q) : App.renderSearchHome();
   }
@@ -255,15 +259,16 @@ App.renderSidebar = () => {
   // folders
   const folders = App.folders();
   el.folders.hidden = !folders.length;
+  el.listWrap.classList.toggle('has-folders', !!folders.length);
   el.folders.replaceChildren();
   if (!folders.some((f) => f.id === S.folder)) S.folder = 'all';
   const all = App.sortedChats(false);
   for (const f of [{ id: 'all', title: 'همه گفتگوها' }, ...folders]) {
-    const count = f.id === 'all' ? 0 : all.filter((c) => App.folderMatch(f, c) && c.unread && !c.muted).length;
+    const count = all.filter((c) => App.folderMatch(f.id === 'all' ? null : f, c) && c.unread && !c.muted).length;
     el.folders.append(h('button', { class: 'folder' + (S.folder === f.id ? ' active' : ''), role: 'tab', dataset: { id: f.id },
       onclick: () => { S.folder = f.id; App.renderSidebar(); },
       oncontextmenu: (e) => { e.preventDefault(); App.folderMenu(f, e); } },
-    h('span', { class: 'tl' }, f.emoji ? f.emoji + ' ' : '', f.title, count ? h('span', { class: 'count' }, fa(count)) : null), h('i')));
+    h('span', { class: 'tl' }, f.emoji ? f.emoji + ' ' : '', f.id === 'all' ? 'همه' : f.title, count ? h('span', { class: 'count' }, fa(count)) : null)));
   }
   const archivedChats = App.sortedChats(true);
   if (archivedChats.length && S.folder === 'all') {
@@ -271,8 +276,8 @@ App.renderSidebar = () => {
     list.append(h('div', { class: 'ci archive-row', onclick: () => App.openArchive() },
       avatarEl({ archive: true }),
       h('div', { class: 'body' },
-        h('div', { class: 'row' }, h('div', { class: 'title' }, h('span', { class: 't' }, 'بایگانی'))),
-        h('div', { class: 'row' }, h('div', { class: 'preview' }, archivedChats.slice(0, 4).map(chatTitle).join('، ')), unread ? h('span', { class: 'badge muted' }, fa(unread)) : null))));
+        h('div', { class: 'row' }, h('div', { class: 'title' }, h('span', { class: 't' }, 'گفتگوهای بایگانی‌شده'))),
+        h('div', { class: 'row' }, h('div', { class: 'preview' }, archivedChats.slice(0, 6).flatMap((c, i) => [i ? '، ' : '', c.unread ? h('b', { class: 'hl', dir: 'auto' }, chatTitle(c)) : chatTitle(c)])), unread ? h('span', { class: 'badge muted' }, fa(unread)) : null))));
   }
   const f = S.folder === 'all' ? null : folders.find((x) => x.id === S.folder);
   const chats = all.filter((c) => App.folderMatch(f, c));
@@ -2062,3 +2067,6 @@ App.boot = async () => {
 // "keep me signed in" off = forget the session when the browser is closed
 const SESSION_ALIVE = (() => { try { return sessionStorage.getItem('kb_alive') === '1'; } catch { return true; } })();
 try { sessionStorage.setItem('kb_alive', '1'); } catch {}
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && S.active && !$('.modal-wrap')) { e.preventDefault(); App.openChatSearch(); }
+});

@@ -186,7 +186,31 @@ async function until(fn, label, ms = 3000) {
   await until(() => $('.msg.mine .filecard'), 'file card');
   ok(run('document.querySelector(".msg.mine .filecard .fn").textContent') === 'doc.pdf', 'document message rendered');
 
-  // TODO(v3): group/channel/settings flows moved to sidebar tabs; port these checks
+  console.log('main menu + settings (Web K 2.2)');
+  click($('.menu-btn'));
+  await until(() => $('.menu.main-menu'), 'main menu opens');
+  ok($$('.menu.main-menu .mi').length >= 6 && $('.menu.main-menu svg.i.o'), 'main menu with outline icons');
+  const more = [...$$('.menu.main-menu .mi')].find((b) => b.textContent.includes('بیشتر'));
+  click(more);
+  await until(() => $('.menu.sub'), 'More submenu opens');
+  ok($('.menu.sub .menu-foot').textContent.includes('کبوتر وب') && !$('.menu.sub .menu-foot').textContent.includes('ناعدد'), 'submenu footer shows version');
+  run('UI.closeMenu()');
+  ok(!$('.menu-btn').classList.contains('open'), 'menu button resets on close');
+  click($('.fab-new'));
+  await until(() => $('.menu.fab-menu'), 'FAB menu opens');
+  ok($('.fab-new').classList.contains('open') && $$('.menu.fab-menu .mi').length === 3, 'FAB turns into ✕ with 3 actions');
+  run('UI.closeMenu()');
+  run('App.openSettings()');
+  await until(() => $('.main-settings .profile-top'), 'settings tab opens');
+  ok($$('.main-settings .sq-row .sq').length >= 10, 'settings rows with coloured squircle icons');
+  ok($$('.main-settings .section').length >= 3, 'settings grouped in cards');
+  const kb = [...$$('.main-settings .sq-row')].find((r) => r.textContent.includes('میانبر'));
+  click(kb);
+  await until(() => $$('.kb-row').length > 5, 'keyboard shortcuts page');
+  ok($$('kbd').length > 5, 'shortcut keys rendered');
+  run('App.side.popAll()');
+  await sleep(300);
+
   console.log('logout');
   run('App.logout(false)');
   await until(() => !$('#auth').hidden, 'back to login');

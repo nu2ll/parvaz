@@ -20,12 +20,18 @@ const Stories = {
     if (!box) return;
     const f = this.feed;
     // like Web K: the strip only appears when there is something to watch
-    if (!f || S.settings.stories_hidden || S.archived || (!f.me && !f.users.length)) { box.hidden = true; return; }
+    const stack = typeof el !== 'undefined' ? el.storyStack : null;
+    if (!f || S.settings.stories_hidden || S.archived || (!f.me && !f.users.length)) { box.hidden = true; if (stack) stack.hidden = true; return; }
+    if (stack) {
+      const top = [...f.users.filter((e) => e.unseen), ...f.users.filter((e) => !e.unseen), f.me].filter(Boolean).slice(0, 3);
+      stack.replaceChildren(...top.map((e) => h('span', { class: 'ss' + (e.unseen ? ' unseen' : '') }, userAvatar(e.user, 's32'))));
+      stack.hidden = false;
+    }
     const items = [];
     const me = f.me;
-    items.push(h('button', { type: 'button', class: 'story-item me', onclick: () => (me ? this.openEntry(me) : this.compose()) },
-      h('span', { class: 'ring' + (me ? ' mine' : '') }, userAvatar(S.me, 's54')), !me ? h('span', { class: 'plus' }, icon('plus')) : null,
-      h('span', { class: 'nm' }, 'استوری من')));
+    // Web K only shows your own circle when you have a live story (posting is in the menu → My Stories)
+    if (me) items.push(h('button', { type: 'button', class: 'story-item me', onclick: () => this.openEntry(me) },
+      h('span', { class: 'ring mine' }, userAvatar(S.me, 's54')), h('span', { class: 'nm' }, 'استوری من')));
     for (const e of f.users) {
       items.push(h('button', { type: 'button', class: 'story-item', onclick: () => this.openEntry(e) },
         h('span', { class: 'ring' + (e.unseen ? ' unseen' : ' seen') }, userAvatar(e.user, 's54')), h('span', { class: 'nm', dir: 'auto' }, userName(e.user).split(' ')[0])));
