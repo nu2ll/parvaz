@@ -239,7 +239,16 @@ App.buildShell = () => {
   el.search.addEventListener('blur', () => setTimeout(() => { side.classList.toggle('searching', App.searching()); App.updateNav(); }, 150));
   el.search.addEventListener('keydown', (e) => { if (e.key === 'Escape') App.endSearch(); });
   // scrolling hides the search pill under the title (it comes back at the top / via the search icon)
-  el.list.addEventListener('scroll', () => { if (!App.searching()) el.rootChats.classList.toggle('search-collapsed', el.list.scrollTop > 40); }, { passive: true });
+  // hysteresis + a spacer while folded: folding grows the list, and with only a few chats the browser
+  // would clamp scrollTop back to 0 and unfold it again (that's why it only folded once)
+  let lastY = 0;
+  el.list.addEventListener('scroll', () => {
+    if (App.searching()) return;
+    const y = el.list.scrollTop, folded = el.rootChats.classList.contains('search-collapsed');
+    if (!folded && y > 48 && y > lastY) el.rootChats.classList.add('search-collapsed');
+    else if (folded && y <= 2) el.rootChats.classList.remove('search-collapsed');
+    lastY = y;
+  }, { passive: true });
   App.buildChatArea();
   App.buildInfo();
 };

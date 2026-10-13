@@ -417,7 +417,11 @@ function chatAvatar(c, size) {
 const userAvatar = (u, size, withStories) => avatarEl({ name: userName(u), avatar: u.avatar, seed: u.id, online: u.online && u.id !== S.me?.id, stories: withStories ? u.stories : null }, size);
 
 /* ---------- toast ---------- */
+// Telegram Android doesn't pop "copied" / "saved" / "session ended" notes at the bottom: those are
+// silent now. Only real problems (errors, "allow the microphone", "type a name") are still shown.
+const QUIET_TOAST = /(کپی شد|ذخیره شد|منتشر شد|خاتمه یافت|خاتمه یافتند|پاک شد|اضافه شد|حذف شد|ادمین شد|برکنار شد|داده شد|برداشته شد|فعال شد|خاموش شد|مسدود شد|رفع مسدودی شد|بایگانی شد|زمان‌بندی شد|ارسال شد|تنظیم شد|در پروفایل ماند|منقضی شد، دوباره وارد شوید|در حال آپلود…|در حال آپلود استوری…|مرتب بر اساس نام|مرتب بر اساس آخرین بازدید)$/;
 function toast(msg, action) {
+  if (msg == null || msg === '' || QUIET_TOAST.test(String(msg).trim())) return;
   let t = $('#toast');
   if (!t) document.body.append((t = h('div', { id: 'toast', class: 'toast', role: 'status' })));
   t.textContent = msg;

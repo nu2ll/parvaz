@@ -134,7 +134,7 @@ function client(token) {
   ok((await ws.waitFor((e) => e.type === 'ack' && e.ref === 1)).result.reactions[0].mine, 'ack with result');
   ws.send({ type: 'react', message_id: got.message.id, emoji: '❤️' });
   ok((await wa.waitFor((e) => e.type === 'message_updated')).message.reactions.length === 0, 'same reaction again removes it');
-  ws.send({ type: 'react', message_id: got.message.id, emoji: '💩', ref: 2 });
+  ws.send({ type: 'react', message_id: got.message.id, emoji: '🦖', ref: 2 });
   ok((await ws.waitFor((e) => e.type === 'error' && e.ref === 2)).code === 'validation', 'unknown reaction rejected');
 
   const photo = await call('POST', `/api/chats/${chatId}/messages`, { file_id: up.data.file.id, text: 'کپشن', reply_to: got.message.id }, A);

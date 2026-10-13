@@ -11,7 +11,11 @@ const { HttpError } = require('./http-util');
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MANAGERS = new Set(['owner', 'admin']);
-const REACTIONS = ['👍', '👎', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🤯', '😱', '😢', '🎉', '🤩', '🙏', '👌', '💯', '😂', '🕊'];
+// Telegram's full set of standard reactions, in Telegram's order (the first ones show in the quick bar)
+const REACTIONS = ['👍', '👎', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🤯', '😱', '🤬', '😢', '🎉', '🤩', '🤮', '💩', '🙏', '👌', '🕊', '🤡', '🥱', '🥴',
+  '😍', '🐳', '❤️‍🔥', '🌚', '🌭', '💯', '🤣', '⚡', '🍌', '🏆', '💔', '🤨', '😐', '🍓', '🍾', '💋', '🖕', '😈', '😴', '😭', '🤓', '👻', '👨‍💻',
+  '👀', '🎃', '🙈', '😇', '😨', '🤝', '✍️', '🤗', '🫡', '🎅', '🎄', '☃️', '💅', '🤪', '🗿', '🆒', '💘', '🙉', '🦄', '😘', '💊', '🙊', '😎',
+  '👾', '🤷‍♂️', '🤷', '🤷‍♀️', '😡', '😂'];
 const MAX_PINNED_CHATS = 5;
 const err = (status, code, message) => new HttpError(status, code, message);
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n) + '…' : s || '');
@@ -19,14 +23,15 @@ const isManager = (m) => !!m && MANAGERS.has(m.role);
 
 // ---------- privacy ----------
 
-const PRIVACY_KEYS = ['last_seen', 'photo', 'bio', 'forwards', 'calls', 'groups'];
+const PRIVACY_KEYS = ['last_seen', 'photo', 'bio', 'forwards', 'calls', 'groups', 'birthday'];
+const PRIVACY_DEFAULTS = { birthday: 'contacts' };
 const PRIVACY_VALUES = new Set(['everybody', 'contacts', 'nobody']);
 function privacyOf(u) {
   let raw = u.privacy;
   if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = {}; } }
   raw = raw && typeof raw === 'object' ? raw : {};
   const out = {};
-  for (const k of PRIVACY_KEYS) out[k] = PRIVACY_VALUES.has(raw[k]) ? raw[k] : 'everybody';
+  for (const k of PRIVACY_KEYS) out[k] = PRIVACY_VALUES.has(raw[k]) ? raw[k] : PRIVACY_DEFAULTS[k] || 'everybody';
   if (u.show_last_seen === 0 && !PRIVACY_VALUES.has(raw.last_seen)) out.last_seen = 'nobody';
   return out;
 }
@@ -74,6 +79,27 @@ function publicUser(u, viewerId) {
     contact_name: contactName,
     blocked: !self && viewerId ? repo.isBlocked(viewerId, u.id) : false,
     stories: storiesSummary(u, viewerId),
+    birthday: u.birthday && allows(u, 'birthday', viewerId) ? u.birthday : null,
+    personal_channel: personalChannel(u),
+  };
+}
+
+// Telegram: a public channel you own, shown on your profile with its latest post
+function personalChannel(u) {
+  if (!u.personal_channel) return null;
+  const ch = repo.chatById(u.personal_channel);
+  if (!ch || ch.type !== 'channel' || !ch.username) return null;
+  const me = repo.membership(ch.id, u.id);
+  if (!me || me.role !== 'owner') return null;
+  const last = repo.lastMessage(ch.id);
+  let preview = '';
+  if (last) {
+    try { preview = require('./push').preview(last); } catch { preview = String(last.text || ''); }
+  }
+  return {
+    id: ch.id, title: ch.title, username: ch.username, verified: !!ch.verified,
+    avatar: fileUrl(ch.avatar_file), subscribers: repo.memberCount(ch.id),
+    last: last ? { id: last.id, text: preview.slice(0, 200), date: last.created_at } : null,
   };
 }
 
@@ -423,6 +449,18 @@ function requireOwnImage(userId, fileIdRaw) {
   return id;
 }
 
+// "MM-DD" or "YYYY-MM-DD" (year optional, like Telegram), or null to remove
+function parseBirthday(raw) {
+  if (raw === null || raw === '') return null;
+  const m = /^(?:(\d{4})-)?(\d{2})-(\d{2})$/.exec(String(raw));
+  if (!m) throw v.bad('Birthday must look like YYYY-MM-DD or MM-DD');
+  const y = m[1] ? Number(m[1]) : 2000, mo = Number(m[2]), d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) throw v.bad('Invalid date');
+  if (m[1] && (y < 1900 || dt.getTime() > Date.now())) throw v.bad('Invalid year');
+  return m[0];
+}
+
 function updateProfile(user, body) {
   const fields = {};
   if (body.display_name !== undefined) fields.display_name = v.displayName(body.display_name);
@@ -432,6 +470,17 @@ function updateProfile(user, body) {
     ensureNameFree(fields.username, { userId: user.id });
   }
   if (body.avatar !== undefined) fields.avatar_file = body.avatar === null ? null : requireOwnImage(user.id, body.avatar);
+  if (body.birthday !== undefined) fields.birthday = parseBirthday(body.birthday);
+  if (body.personal_channel !== undefined) {
+    if (body.personal_channel === null || body.personal_channel === 0) fields.personal_channel = null;
+    else {
+      const ch = repo.chatById(Number(body.personal_channel));
+      const me = ch && repo.membership(ch.id, user.id);
+      if (!ch || ch.type !== 'channel' || !me || me.role !== 'owner') throw v.bad('You can only show a channel you own');
+      if (!ch.username) throw v.bad('Only public channels can be shown on your profile');
+      fields.personal_channel = ch.id;
+    }
+  }
   if (body.show_last_seen !== undefined) {
     fields.show_last_seen = body.show_last_seen ? 1 : 0;
     fields.privacy = JSON.stringify({ ...privacyOf(repo.userById(user.id)), last_seen: body.show_last_seen ? 'everybody' : 'nobody' });

@@ -481,6 +481,22 @@ App.openInfo = async (chatId, refresh) => {
   }
   if (c.can_manage && c.invite_token && !c.username) rows.append(vrow(inviteUrl(c.invite_token).replace(/^https?:\/\//, ''), 'لینک دعوت', () => copyText(inviteUrl(c.invite_token), 'لینک کپی شد'), 'ltr-n'));
   if (priv && c.peer.system) rows.append(vrow('حساب رسمی کبوتر', 'سرویس', null));
+  if (priv && c.peer.birthday) {
+    const [y, mo, d] = c.peer.birthday.length === 10 ? c.peer.birthday.split('-').map(Number) : [null, ...c.peer.birthday.split('-').map(Number)];
+    const dt = new Date(Date.UTC(y || 2000, mo - 1, d));
+    const txt = dt.toLocaleDateString('fa-IR', { day: 'numeric', month: 'long', ...(y ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+    const now = new Date(), today = now.getMonth() + 1 === mo && now.getDate() === d;
+    rows.append(vrow((today ? '🎂 ' : '') + txt, today ? 'امروز تولدش است' : 'تولد', null));
+  }
+  const pc = priv && c.peer.personal_channel;
+  if (pc) {
+    rows.after?.call(rows);
+    App.personalChannelCard = h('div', { class: 'p-card p-channel', onclick: () => { App.backInfo(); App.openByUsername(pc.username); } },
+      h('div', { class: 'pc-cap' }, 'کانال'),
+      h('div', { class: 'pc-row' }, avatarEl({ name: pc.title, avatar: pc.avatar, seed: pc.id * 7 + 3 }, 's42'),
+        h('div', { class: 'body' }, h('div', { class: 'n', dir: 'auto' }, pc.title, pc.verified ? R.verified() : null),
+          h('div', { class: 's', dir: 'auto' }, pc.last ? pc.last.text : `${fa(pc.subscribers)} مشترک`))));
+  } else App.personalChannelCard = null;
   if (!rows.children.length) rows.hidden = true;
   const extra = h('div', { class: 'info-rows p-card p-links' });
   if (priv && !c.peer.system && !c.peer.is_contact) extra.append(UI.row('personAdd', 'افزودن به مخاطبین', null, () => App.contactDialog(c.peer), 'accent'));
@@ -537,12 +553,30 @@ App.openInfo = async (chatId, refresh) => {
   // Telegram Android: round photo in the middle, name, status, then three action cards
   const name = h('div', { class: 't', dir: 'auto' }, chatTitle(c), c.verified ? R.verified() : null);
   const status = st.text ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, st.text) : null;
+  // the photo stays a small circle (never opens by itself); tap = grows into the big photo like
+  // Telegram, tap the big photo = full screen viewer, tap the arrow/scroll = back to the circle
   const big = chatAvatar(c, 's110');
+  const top = h('div', { class: 'info-top p-top' }, big, name, status);
+  const viewer = () => UI.lightbox({ kind: 'photo', media: { url: c.avatar, name: 'avatar.jpg' }, sender: c.peer || { display_name: c.title, id: c.id }, created_at: Date.now(), id: 0 }, null);
+  const collapse = () => {
+    const ph = top.querySelector('.p-photo');
+    if (!ph) return;
+    top.classList.remove('expanded');
+    ph.classList.add('out');
+    setTimeout(() => ph.remove(), 260);
+  };
   big.addEventListener('click', () => {
     if (priv && c.peer.stories) return App.openStoriesOf(c.peer.id);
-    if (c.avatar && !isSaved(c)) UI.lightbox({ kind: 'photo', media: { url: c.avatar, name: 'avatar.jpg' }, sender: c.peer || { display_name: c.title, id: c.id }, created_at: Date.now(), id: 0 }, null);
+    if (!c.avatar || isSaved(c)) return;
+    if (top.querySelector('.p-photo')) return;
+    const r = big.getBoundingClientRect(), tr = top.getBoundingClientRect();
+    const ph = h('div', { class: 'p-photo', onclick: viewer, style: { '--ox': `${r.left + r.width / 2 - tr.left}px`, '--oy': `${r.top + r.height / 2 - tr.top}px` } },
+      h('img', { src: c.avatar, alt: '' }), h('div', { class: 'ip-over' }, name.cloneNode(true), status ? status.cloneNode(true) : null));
+    top.prepend(ph);
+    top.classList.add('expanded');
+    Native.haptic?.('tap');
   });
-  const top = h('div', { class: 'info-top p-top' }, big, name, status);
+  top.collapse = collapse;
   const act = (ic, label, fn, cls) => h('button', { type: 'button', class: 'p-action' + (cls ? ' ' + cls : ''), onclick: fn }, icon(ic), h('span', {}, label));
   const muteAct = () => act(c.muted ? 'oBellOff' : 'oBell', c.muted ? 'صدادار کردن' : 'بی‌صدا کردن', () => App.chatSetting(c, { muted: !c.muted }));
   const goChat = () => { App.backInfo(); if (S.active !== c.id) App.openChat(c.id); };
@@ -568,7 +602,9 @@ App.openInfo = async (chatId, refresh) => {
   const more = ibtn('more', 'بیشتر', (e) => App.infoMenu(c, e.currentTarget));
   el.infoBase.replaceChildren(
     h('div', { class: 'stab-head p-head' }, ibtn('back', 'بازگشت', App.backInfo), h('div', { class: 'sp' }), isSaved(c) ? null : more),
-    h('div', { class: 'stab-body info-body p-body' }, top, actions, rows, extra, h('div', { class: 'info-media' }, tabBar, content)));
+    h('div', { class: 'stab-body info-body p-body' }, top, actions, App.personalChannelCard, rows, extra, h('div', { class: 'info-media' }, tabBar, content)));
+  const pbody = el.infoBase.querySelector('.p-body');
+  pbody.addEventListener('scroll', () => { if (pbody.scrollTop > 40 && top.classList.contains('expanded')) collapse(); }, { passive: true });
   showTab(tab && tabs.some((t) => t[0] === tab) ? tab : tabs[0][0]);
 };
 

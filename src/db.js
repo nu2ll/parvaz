@@ -270,12 +270,14 @@ ensureColumn('users', 'official_joined', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chats', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chats', 'is_official', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('sessions', 'ua', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('users', 'birthday', 'TEXT');
+ensureColumn('users', 'personal_channel', 'INTEGER');
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(chat_id, topic_id, id);
 PRAGMA user_version = ${SCHEMA_VERSION};
 `);
 
-const USER_COLS = 'id, username, display_name, bio, avatar_file, show_last_seen, privacy, verified, is_system, created_at, last_seen';
+const USER_COLS = 'id, username, display_name, bio, avatar_file, show_last_seen, privacy, verified, is_system, created_at, last_seen, birthday, personal_channel';
 
 const MSG_SELECT = `
 SELECT m.id, m.chat_id, m.sender_id, m.kind, m.text, m.file_id, m.reply_to, m.fwd_name, m.fwd_chat, m.poll, m.meta,
@@ -390,7 +392,7 @@ const s = {
 const likeEscape = (q) => q.replace(/[\\%_]/g, (c) => '\\' + c);
 
 function updateUser(id, fields) {
-  const allowed = ['display_name', 'bio', 'username', 'avatar_file', 'show_last_seen', 'privacy'];
+  const allowed = ['display_name', 'bio', 'username', 'avatar_file', 'show_last_seen', 'privacy', 'birthday', 'personal_channel'];
   const keys = Object.keys(fields).filter((k) => allowed.includes(k));
   if (!keys.length) return;
   db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id);

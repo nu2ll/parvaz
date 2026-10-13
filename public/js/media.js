@@ -5,15 +5,23 @@
    EMOJI / STICKERS / GIFS dropdown (Web K .emoji-dropdown)
    ===================================================================== */
 let emojiEl = null;
-UI.closeEmoji = () => {
+UI.closeEmoji = (instant) => {
   if (!emojiEl) return false;
   const e = emojiEl;
   emojiEl = null;
-  e.classList.add('hide');
-  setTimeout(() => e.remove(), 150);
+  if (e.classList.contains('emoji-dock')) {
+    // docked panel (phones): it takes the keyboard's place, so it leaves without a fade
+    e.remove();
+    document.body.classList.remove('emoji-docked');
+  } else {
+    e.classList.add('hide');
+    setTimeout(() => e.remove(), instant ? 0 : 150);
+  }
   document.querySelector('.composer .emoji-btn')?.classList.remove('on');
+  UI.onEmojiClosed?.();
   return true;
 };
+UI.emojiOpen = () => !!emojiEl;
 
 App.loadStickers = async (force) => {
   if (S.stickers && !force) return S.stickers;
@@ -35,7 +43,8 @@ UI.emojiDropdown = (anchor, handlers) => {
   anchor.classList.add('on');
   const body = h('div', { class: 'ep-body' });
   const tabs = h('div', { class: 'ep-tabs' });
-  const pop = h('div', { class: 'emoji-pop', onmousedown: (e) => { if (!e.target.closest('input')) e.preventDefault(); } }, body, tabs);
+  const dock = handlers.dock || null;
+  const pop = h('div', { class: dock ? 'emoji-dock' : 'emoji-pop', onmousedown: (e) => { if (!e.target.closest('input')) e.preventDefault(); } }, body, tabs);
   emojiEl = pop;
   let tab = store('emojiTab', 'emoji');
   const showTab = (t) => {
@@ -143,9 +152,17 @@ UI.emojiDropdown = (anchor, handlers) => {
       }, 300);
     });
     showSaved();
-    setTimeout(() => input.focus(), 30);
+    if (!dock) setTimeout(() => input.focus(), 30);
   }
 
+  if (dock) {
+    // Telegram Android: the panel sits under the composer, exactly where the keyboard was
+    pop.style.height = (handlers.height || 300) + 'px';
+    dock.after(pop);
+    document.body.classList.add('emoji-docked');
+    showTab(handlers.noStickers ? 'emoji' : tab);
+    return pop;
+  }
   document.body.append(pop);
   const a = anchor.getBoundingClientRect();
   const w = Math.min(420, innerWidth - 16), ht = Math.min(420, innerHeight - 140);

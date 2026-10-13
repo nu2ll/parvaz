@@ -1624,3 +1624,72 @@ body.booted #app { opacity: 1; transition: opacity .22s ease; }
 .dev-rows .dr:last-child { border: 0; }
 .dev-rows .dr span { color: var(--text-2); }
 .btn.flat.danger { color: var(--danger); }
+
+/* profile photo: circle by default, tap grows it into the big photo (Telegram Android) */
+.p-top { position: relative; }
+.p-top.expanded { padding-top: 0; }
+.p-top.expanded > .avatar, .p-top.expanded > .t, .p-top.expanded > .st { visibility: hidden; height: 0; margin: 0; }
+.p-photo { position: relative; aspect-ratio: 1; margin: 0 -16px 0; overflow: hidden; cursor: zoom-in; background: var(--bg-2);
+  transform-origin: var(--ox, 50%) var(--oy, 60px); animation: pGrow .3s cubic-bezier(.2,.9,.25,1); }
+.p-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.p-photo .ip-over { position: absolute; inset: auto 0 0; padding: 50px 20px 16px; background: linear-gradient(transparent, rgba(0,0,0,.6)); color: #fff; text-align: start; }
+.p-photo .ip-over .t { font-size: 22px; font-weight: 600; justify-content: flex-start; color: #fff; }
+.p-photo .ip-over .st { color: rgba(255,255,255,.8) !important; }
+.p-photo.out { animation: pShrink .25s ease forwards; }
+@keyframes pGrow { from { clip-path: circle(55px at var(--ox, 50%) var(--oy, 60px)); transform: scale(.98); } to { clip-path: circle(100% at 50% 50%); } }
+@keyframes pShrink { to { clip-path: circle(55px at var(--ox, 50%) var(--oy, 60px)); opacity: 0; } }
+
+/* =====================================================================
+   v3.9: Telegram Android fixes
+   ===================================================================== */
+/* unread counter on the back button sits on the edge of the circle, not inside it */
+.chat-head > .back, .chat-head > .back.rippled { overflow: visible !important; }
+.chat-head > .back .ripple { display: none; }
+.chat-head > .back:active { background: var(--hover); }
+.chat-head > .back .back-badge { top: -5px; right: -8px; left: auto; inset-inline-end: auto; z-index: 2; box-shadow: 0 0 0 2px var(--surface); }
+/* no scrollbars on phones / in the app */
+@media (pointer: coarse) { * { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; } }
+.in-app * { scrollbar-width: none !important; }
+.in-app ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+/* folded search pill: the spacer keeps the list scrollable so it folds every time */
+.root-chats.search-collapsed .list::after { content: ''; display: block; height: 64px; }
+/* emoji panel docked under the composer, in the keyboard's place */
+.emoji-dock { flex: none; display: flex; flex-direction: column; background: var(--surface); overflow: hidden; position: relative; z-index: 3;
+  border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+[data-theme="dark"] .emoji-dock { border-top-color: #2c2c2c; }
+.emoji-dock .ep-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+body.emoji-docked .fab-down { display: none; }
+/* story viewer laid out like Telegram: avatar + name on the left, views on the left */
+.story-viewer .sv-top, .story-viewer .sv-head, .story-viewer .sv-foot { direction: ltr; }
+.story-viewer .sv-head { padding-right: 40px; }
+.story-viewer .sv-head .body { text-align: left; }
+.story-viewer .sv-bars { flex-direction: row; }
+.story-viewer .sv-bars b { margin: 0; }
+.story-viewer .sv-tap.prev { left: 0; right: auto; } .story-viewer .sv-tap.next { right: 0; left: auto; }
+.story-viewer .sv-close { left: auto !important; right: 6px; top: 22px !important; }
+.story-viewer .sv-foot { justify-content: flex-start; }
+.story-stack .ss.me { position: relative; }
+.story-stack .ss.none { background: transparent; }
+.story-stack .ss-plus { position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 1.5px var(--surface); }
+.story-stack .ss-plus .i { width: 10px; height: 10px; }
+.story-item .ring.none { background: transparent; }
+/* reactions bar: scroll sideways, ⌄ opens the whole Telegram set */
+.reactions-pop { max-width: calc(100vw - 16px); overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+.reactions-pop .rx-more { flex: none; position: sticky; right: 0; background: var(--surface); border-radius: 50%; }
+.reactions-pop .rx-more .i { transform: rotate(90deg); width: 20px; height: 20px; }
+.reactions-pop.all { display: grid !important; grid-template-columns: repeat(7, 1fr); max-height: 260px; overflow-y: auto; border-radius: 18px; width: min(340px, calc(100vw - 16px)); }
+.reactions-pop.all .rx-more .i { transform: rotate(-90deg); }
+/* profile: smaller action cards, channel card, birthday */
+.p-top .avatar.s110 { width: 96px; height: 96px; font-size: 38px; margin-bottom: 10px; }
+.p-top .t { font-size: 20px; }
+.p-actions { gap: 6px !important; }
+.p-action { padding: 7px 4px 6px !important; gap: 2px !important; font-size: 12.5px !important; border-radius: 14px !important; }
+.p-action .i { width: 22px !important; height: 22px !important; }
+.p-channel { padding: 8px 14px 10px; cursor: pointer; }
+.p-channel .pc-cap { font-size: 13.5px; color: var(--accent); font-weight: 500; margin-bottom: 6px; }
+.p-channel .pc-row { display: flex; gap: 12px; align-items: center; }
+.p-channel .body { min-width: 0; flex: 1; }
+.p-channel .n { font-weight: 500; display: flex; gap: 4px; align-items: center; }
+.p-channel .s { color: var(--text-2); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field.bday { display: flex; gap: 8px; align-items: center; }
+.bday-input, .pc-select { flex: 1; height: 48px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 0 12px; font: inherit; width: 100%; }

@@ -114,16 +114,27 @@ const SETTINGS_PAGES = {
         } catch {}
       }, 300);
     });
+    const bdayInput = h('input', { type: 'date', value: me.birthday && me.birthday.length === 10 ? me.birthday : '', max: new Date().toISOString().slice(0, 10), dir: 'ltr', class: 'bday-input' });
+    const bday = h('div', { class: 'field bday' }, bdayInput,
+      h('button', { type: 'button', class: 'btn flat', onclick: () => { bdayInput.value = ''; } }, 'حذف تولد'));
+    const owned = [...S.chats.values()].filter((x) => x.type === 'channel' && x.can_manage && x.username);
+    const chSel = h('select', { class: 'pc-select' }, h('option', { value: '' }, 'هیچ'),
+      owned.map((x) => h('option', { value: String(x.id), selected: me.personal_channel?.id === x.id }, x.title)));
     const tab = push('ویرایش پروفایل', [
       avatarEditor({ name: me.display_name, avatar: me.avatar, seed: me.id }, async (id) => { S.me = (await api('PATCH', '/api/me', { avatar: id })).user; },
         { onRemove: async () => { S.me = (await api('PATCH', '/api/me', { avatar: null })).user; } }),
       h('div', { class: 'section' }, name, bio, h('div', { class: 'section-foot' }, 'هر چیزی درباره خودتان: سن، شغل یا شهر. مثلاً «طراح از شیراز».')),
+      h('div', { class: 'section' }, h('div', { class: 'section-caption' }, 'تولد'), bday,
+        h('div', { class: 'section-foot' }, 'فقط مخاطبین شما تاریخ تولدتان را می‌بینند (از حریم خصوصی قابل تغییر است).')),
+      h('div', { class: 'section' }, h('div', { class: 'section-caption' }, 'کانال شخصی'), chSel,
+        h('div', { class: 'section-foot' }, 'یک کانال عمومی که مالکش هستید، بالای پروفایلتان نشان داده می‌شود.')),
       h('div', { class: 'section' }, h('div', { class: 'section-caption' }, 'نام کاربری'), uname,
         h('div', { class: 'section-foot' }, 'دیگران می‌توانند با این نام شما را پیدا کنند و بدون دانستن چیز دیگری پیام بدهند. حروف a-z، عدد و _ ، حداقل ۴ حرف.')),
     ], {
       fab: { icon: 'check', title: 'ذخیره', onClick: async () => {
         if (!unameOk) return toast('نام کاربری را درست کنید');
-        const body = { display_name: name.input.value.trim(), bio: bio.input.value.trim() };
+        const body = { display_name: name.input.value.trim(), bio: bio.input.value.trim(), birthday: bdayInput.value || null,
+          personal_channel: chSel.value ? Number(chSel.value) : null };
         const un = uname.input.value.trim().replace(/^@/, '');
         if (un !== me.username) body.username = un;
         try { S.me = (await api('PATCH', '/api/me', body)).user; toast('ذخیره شد'); App.side.pop(tab); } catch (e) { toast(e.message); }
@@ -268,6 +279,7 @@ const SETTINGS_PAGES = {
           rule('forwards', 'forward', 'پیام‌های بازارسال‌شده'),
           rule('calls', 'phone', 'تماس‌ها'),
           rule('groups', 'group', 'گروه‌ها و کانال‌ها'),
+          rule('birthday', 'heart', 'تاریخ تولد'),
         ], 'تعیین کنید چه کسانی بتوانند این اطلاعات را ببینند یا شما را به گروه‌ها اضافه کنند. کاربران مسدود هیچ‌کدام را نمی‌بینند.'));
     };
     paint();
@@ -286,6 +298,7 @@ const SETTINGS_PAGES = {
       calls: 'چه کسانی می‌توانند با شما تماس بگیرند.',
       groups: 'چه کسانی می‌توانند شما را به گروه‌ها و کانال‌ها اضافه کنند.',
       bio: 'چه کسانی بیوگرافی شما را ببینند.',
+      birthday: 'چه کسانی تاریخ تولد شما را ببینند.',
     };
     push(label, [UI.section(label, UI.radios([['everybody', 'همه'], ['contacts', 'مخاطبین من'], ['nobody', 'هیچ‌کس']], p[key] || 'everybody', async (v) => {
       try { const r = await api('PATCH', '/api/me/privacy', { [key]: v }); S.me = { ...S.me, privacy: r.privacy }; } catch (e) { toast(e.message); }
