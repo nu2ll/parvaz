@@ -276,3 +276,20 @@ App.newMessageScreen = async () => {
   await App.loadContacts(true);
   paint();
 };
+
+/* ---------- Android app (WebView) back button ---------- */
+window.KabootarBack = () => {
+  if ($('.menu')) { UI.closeMenu(); return true; }
+  if ($('.cropper')) { $('.cropper .crop-top .ibtn')?.click(); return true; }
+  if ($('.story-viewer')) { Stories.close?.(); return true; }
+  if ($('.lightbox')) { $('.lightbox .lb-close, .lightbox [title="بستن"]')?.click(); if ($('.lightbox')) $('.lightbox').remove(); return true; }
+  const modals = $$('.modal-wrap');
+  if (modals.length) { modals[modals.length - 1].dispatchEvent(new Event('mousedown')); UI.closeAllModals?.(); return true; }
+  if (S.select) { App.exitSelect(); return true; }
+  if (!$('#info')?.hidden) { App.closeInfo(); return true; }
+  if (document.body.classList.contains('chat-open')) { App.closeChat(); return true; }
+  if (App.side?.depth) { App.side.pop(); return true; }
+  if (App.searching?.()) { App.endSearch(); return true; }
+  if (App.nav && App.nav !== 'chats') { App.showRoot('chats'); return true; }
+  return false;
+};

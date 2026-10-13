@@ -6,31 +6,8 @@ const Calls = {
   supported: () => typeof RTCPeerConnection === 'function' && !!navigator.mediaDevices?.getUserMedia,
 
   /* ---------- tones (WebAudio, no files) ---------- */
-  tone(kind) {
-    this.stopTone();
-    try {
-      const ctx = (this.actx ??= new (window.AudioContext || window.webkitAudioContext)());
-      if (ctx.state === 'suspended') ctx.resume();
-      const pattern = kind === 'incoming' ? [[620, 0, 0.35], [520, 0.4, 0.35]] : [[425, 0, 1.0]];
-      const period = kind === 'incoming' ? 2.2 : 4;
-      const play = () => {
-        const t = ctx.currentTime;
-        for (const [f, d, len] of pattern) {
-          const o = ctx.createOscillator(), g = ctx.createGain();
-          o.frequency.value = f;
-          g.gain.setValueAtTime(0.0001, t + d);
-          g.gain.exponentialRampToValueAtTime(0.06, t + d + 0.03);
-          g.gain.setValueAtTime(0.06, t + d + len - 0.05);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + d + len);
-          o.connect(g).connect(ctx.destination);
-          o.start(t + d); o.stop(t + d + len + 0.02);
-        }
-      };
-      play();
-      this.toneTimer = setInterval(play, period * 1000);
-    } catch {}
-  },
-  stopTone() { clearInterval(this.toneTimer); this.toneTimer = null; },
+  tone(kind) { this.stopTone(); Sound.loop(kind === 'incoming' ? 'ringtone' : 'ringback'); },
+  stopTone() { Sound.stop('ringtone'); Sound.stop('ringback'); },
 
   /* ---------- outgoing ---------- */
   async start(chat, video) {
@@ -209,6 +186,7 @@ const Calls = {
     const call = this.call;
     if (!call) return;
     if (call.id) App.wsSend({ type: 'call_hangup', call_id: call.id });
+    Sound.play('callEnd');
     this.cleanup();
   },
 
@@ -220,6 +198,7 @@ const Calls = {
       case 'call_accepted':
         if (!call || call.id !== ev.call_id) return;
         this.stopTone();
+        Sound.play('connected');
         call.state = 'connecting';
         this.createPC();
         this.renderUI();
@@ -239,6 +218,7 @@ const Calls = {
     call.state = 'ended';
     call.reason = reason;
     this.stopTone();
+    Sound.play(reason === 'busy' ? 'busy' : 'callEnd');
     this.stopMedia();
     this.renderUI();
     setTimeout(() => { if (this.call === call) this.cleanup(); }, 1600);

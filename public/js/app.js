@@ -100,6 +100,7 @@ App.logout = (expired) => {
 };
 App.teardown = () => {
   S.manualClose = true;
+  App.stopPoll?.();
   if (S.ws) S.ws.close();
   if (typeof Calls !== 'undefined') Calls.cleanup?.(true);
   Object.assign(S, { me: null, ws: null, wsReady: false, everConnected: false, active: null, topic: null, reply: null, edit: null, archived: false, select: null, stickers: null, gifs: null, stories: null, contacts: null });
@@ -231,7 +232,7 @@ App.repaintMe = () => {
   App.updateNav();
 };
 
-App.version = () => String(S.config.version || '3.5.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+App.version = () => String(S.config.version || '3.6.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 App.searching = () => !!el.search?.value.trim() || document.activeElement === el.search;
 App.endSearch = () => { el.search.value = ''; el.search.blur(); $('#sidebar').classList.remove('searching'); App.renderSidebar(); };
 
@@ -1387,11 +1388,79 @@ App.cancelBar = () => {
   App.renderComposerBar();
 };
 
-App.wsSend = (obj) => { if (S.ws && S.wsReady) { S.ws.send(JSON.stringify(obj)); return true; } return false; };
+App.wsSend = (obj) => {
+  if (S.ws && S.wsLive && S.ws.readyState === 1) { S.ws.send(JSON.stringify(obj)); return true; }
+  if (S.pollLive && S.poll?.sid) {
+    const sid = S.poll.sid;
+    api('POST', `/api/live/${sid}/send`, obj).then((r) => {
+      if (obj.ref != null && wsPending.has(obj.ref)) App.onEvent({ type: 'ack', ref: obj.ref, result: r.result });
+    }).catch((e) => {
+      if (obj.ref != null && wsPending.has(obj.ref)) App.onEvent({ type: 'error', ref: obj.ref, code: e.code, message: e.message });
+      else if (obj.type === 'send' || obj.type === 'edit') toast(e.message);
+    });
+    return true;
+  }
+  return false;
+};
+
+/* ---------- HTTP live events (fallback transport when WebSockets are blocked) ---------- */
+App.startPoll = () => {
+  if (S.poll || !S.token || !S.me || S.manualClose || S.wsLive) return;
+  S.poll = { sid: null, ack: 0, fails: 0, alive: true, running: false };
+  App.pollLoop(S.poll);
+};
+App.stopPoll = () => {
+  const p = S.poll;
+  if (!p) return;
+  p.alive = false;
+  S.poll = null;
+  S.pollLive = false;
+  S.wsReady = !!S.wsLive;
+  try { p.ctrl?.abort(); } catch {}
+  if (p.sid) api('DELETE', `/api/live/${p.sid}`).catch(() => {});
+};
+App.pollLoop = async (p) => {
+  if (p.running) return;
+  p.running = true;
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    while (p.alive && S.poll === p && S.token) {
+      try {
+        if (!p.sid) {
+          const r = await api('POST', '/api/live', {});
+          if (!p.alive) return;
+          p.sid = r.sid;
+          p.ack = 0;
+          for (const x of r.events) App.onEvent({ ...x.ev, __poll: true });
+        }
+        p.ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+        const guard = setTimeout(() => { try { p.ctrl?.abort(); } catch {} }, 32000);
+        const r = await api('GET', `/api/live/${p.sid}?ack=${p.ack}`, undefined, { signal: p.ctrl?.signal });
+        clearTimeout(guard);
+        if (!p.alive) return;
+        p.fails = 0;
+        App.lastRx = Date.now();
+        if (!S.pollLive) { S.pollLive = true; S.wsReady = true; App.setConn(null); }
+        for (const x of r.events) {
+          p.ack = Math.max(p.ack, x.seq);
+          if (x.ev.type === '__closed') { if (x.ev.code === 4001) api('GET', '/api/me').catch(() => {}); p.sid = null; continue; }
+          App.onEvent(x.ev);
+        }
+      } catch (e) {
+        if (!p.alive) return;
+        if (e.code === 'live_gone') { p.sid = null; continue; }
+        p.fails++;
+        if (p.fails >= 2 && S.pollLive) { S.pollLive = false; S.wsReady = !!S.wsLive; }
+        if (!S.wsReady) App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
+        await pause(Math.min(8000, 700 * p.fails));
+      }
+    }
+  } finally { p.running = false; }
+};
 // request/response over the socket (matched by ref)
 let wsRef = 1;
 const wsPending = new Map();
-App.wsRequest = (obj, ms = 10000) => new Promise((resolve, reject) => {
+App.wsRequest = (obj, ms = 15000) => new Promise((resolve, reject) => {
   const ref = 'r' + wsRef++;
   if (!App.wsSend({ ...obj, ref })) return reject(new ApiError('network', ERRORS.network));
   const t = setTimeout(() => { wsPending.delete(ref); reject(new ApiError('timeout', 'پاسخی از سرور نیامد')); }, ms);
@@ -1409,7 +1478,7 @@ App.sendTyping = (action, force) => {
 };
 
 App.topicFields = (c) => (c?.is_forum ? { topic_id: S.topic ?? 0 } : {});
-App.afterSend = () => { App.sepId = null; App.scrollBottom(); Wallpaper.animate(); };
+App.afterSend = () => { App.sepId = null; App.scrollBottom(); Wallpaper.animate(); Sound.play('out'); };
 
 App.sendText = async (extra = {}) => {
   const c = S.chats.get(S.active);
@@ -1554,6 +1623,7 @@ App.upload = async (file, { caption = '', asFile = false, voice = false, round =
       grouped_id: grouped, spoiler, meta: { width: meta.width || extraMeta?.width, height: meta.height || extraMeta?.height, duration: meta.duration, waveform: meta.waveform }, ...topic,
     };
     if (!App.wsSend(body)) App.onMessage((await api('POST', `/api/chats/${chatId}/messages`, body)).message);
+    if (!voice && !round) Sound.play('out');
     if (S.active === chatId) Wallpaper.animate();
   } catch (err) {
     if (err.code !== 'aborted') toast(err.message);
@@ -1760,7 +1830,8 @@ App.setConn = (state) => {
 App.dropSocket = () => {
   const ws = S.ws;
   S.ws = null;
-  S.wsReady = false;
+  S.wsLive = false;
+  S.wsReady = !!S.pollLive;
   clearTimeout(App.probeTimer); App.probeTimer = null;
   clearTimeout(App.openTimer);
   for (const p of wsPending.values()) p.reject(new ApiError('network', ERRORS.network));
@@ -1776,11 +1847,16 @@ App.connect = () => {
   clearTimeout(App.retryTimer);
   App.dropSocket();
   S.manualClose = false;
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+  let ws;
+  try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`); }
+  catch { App.startPoll(); return App.scheduleReconnect(30000); }
   S.ws = ws;
-  App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
-  // a socket that never becomes ready (captive portals, frozen proxies) is retried quickly
-  App.openTimer = setTimeout(() => { if (S.ws === ws && !S.wsReady) { App.dropSocket(); App.scheduleReconnect(1000); } }, 25000);
+  if (!S.pollLive) App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
+  // a socket that never becomes ready (captive portals, frozen proxies) is retried
+  App.openTimer = setTimeout(() => { if (S.ws === ws && !S.wsLive) { App.dropSocket(); App.scheduleReconnect(S.pollLive ? 30000 : 1000); } }, 25000);
+  // if the socket isn't up quickly, switch to HTTP live events right away (VPNs, filtered networks)
+  clearTimeout(App.fallbackTimer);
+  App.fallbackTimer = setTimeout(() => { if (!S.wsLive && !S.manualClose) App.startPoll(); }, 6000);
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: S.token }));
   ws.onmessage = (e) => {
     App.lastRx = Date.now();
@@ -1794,6 +1870,9 @@ App.connect = () => {
     App.dropSocket();
     if (S.manualClose || !S.token) return;
     if (e.code === 4001) { api('GET', '/api/me').then(() => App.scheduleReconnect(800)).catch(() => {}); return; }
+    S.wsFails = (S.wsFails || 0) + 1;
+    if (S.wsFails >= 2) App.startPoll();
+    if (S.pollLive) return App.scheduleReconnect(30000); // HTTP is carrying us; try upgrading now and then
     App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
     App.scheduleReconnect(document.hidden ? Math.min(30000, 1000 * 2 ** S.retry++) : Math.min(5000, 400 * 2 ** S.retry++));
   };
@@ -1801,7 +1880,7 @@ App.connect = () => {
 // Mobile browsers freeze background tabs and silently kill sockets. When the page comes back,
 // check the socket right away instead of waiting for a (frozen) timer: no refresh needed.
 App.probe = (force) => {
-  if (!S.ws || !S.wsReady || App.probeTimer) return;
+  if (!S.ws || !S.wsLive || App.probeTimer) return;
   if (!force && Date.now() - (App.lastRx || 0) < 20000) return; // traffic seen recently: it's alive
   App.wsSend({ type: 'ping' });
   // a ping over a slow VPN can take a while; only give up after 15s of total silence
@@ -1815,8 +1894,9 @@ App.probe = (force) => {
 App.ensureConnected = () => {
   if (!S.token || !S.me || S.manualClose) return;
   const ws = S.ws;
+  if (S.poll && !S.poll.running) App.pollLoop(S.poll);
   if (!ws || ws.readyState >= 2) { S.retry = 0; App.connect(); }
-  else if (ws.readyState === 1 && S.wsReady) App.probe(document.visibilityState === 'visible' && Date.now() - (App.hiddenAt || Date.now()) > 30000);
+  else if (ws.readyState === 1 && S.wsLive) App.probe(document.visibilityState === 'visible' && Date.now() - (App.hiddenAt || Date.now()) > 30000);
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) App.hiddenAt = Date.now(); });
 window.addEventListener('online', () => { S.retry = 0; App.ensureConnected(); });
@@ -1840,6 +1920,8 @@ App.onEvent = async (ev) => {
       clearTimeout(App.probeTimer); App.probeTimer = null;
       break;
     case 'ready': {
+      if (ev.__poll) S.pollLive = true;
+      else { S.wsLive = true; S.wsFails = 0; clearTimeout(App.fallbackTimer); if (S.poll) App.stopPoll(); }
       S.wsReady = true;
       S.retry = 0;
       clearTimeout(App.openTimer);
@@ -2024,30 +2106,15 @@ App.onMessageUpdated = (m) => {
 
 /* ---------- notifications ---------- */
 let audioCtx = null;
-App.beep = () => {
-  try {
-    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const t = audioCtx.currentTime;
-    for (const [f, d] of [[880, 0], [1320, 0.09]]) {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = 'sine'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t + d);
-      g.gain.exponentialRampToValueAtTime(0.08, t + d + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.16);
-      o.connect(g).connect(audioCtx.destination);
-      o.start(t + d); o.stop(t + d + 0.18);
-    }
-  } catch {}
-};
+App.beep = () => Sound.play('notify', true);
 App.notify = (c, m) => {
   if (c.muted || m.sender.id === S.me.id || m.kind === 'service') return;
   const silent = !!m.silent;
   const typeKey = c.type === 'private' ? 'notify_private' : c.type === 'group' ? 'notify_group' : 'notify_channel';
   if (S.settings[typeKey] === false) return;
   const visible = !document.hidden && App.isActiveKey(App.msgKeyOf(m));
-  if (visible) return;
-  if (S.settings.sound && !silent && !document.hidden) App.beep();
+  if (visible) { if (!silent) Sound.play('in'); return; }
+  if (!silent && !document.hidden) Sound.play('notify');
   if (!S.settings.notify || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const preview = S.settings.notify_preview !== false;

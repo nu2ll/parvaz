@@ -42,6 +42,13 @@ const handlers = {
   ping: (ws) => ws.send({ type: 'pong', time: Date.now() }),
 };
 
+// one frame from a socket or from the HTTP long-poll transport (src/live.js)
+function dispatch(ws, msg) {
+  const handler = handlers[msg.type];
+  if (!handler) throw new HttpError(400, 'unknown_type', `Unknown type "${msg.type}"`);
+  return handler(ws, msg);
+}
+
 function onAuthenticated(ws, user) {
   ws.user = user;
   ws.tokenHash = user.token_hash;
@@ -50,10 +57,19 @@ function onAuthenticated(ws, user) {
   if (cameOnline) service.broadcastPresence(user.id);
 }
 
+function sameHost(req) {
+  try {
+    const o = new URL(req.headers.origin || '');
+    const hosts = [req.headers['x-forwarded-host'], req.headers.host].filter(Boolean).map((x) => String(x).split(',')[0].trim().toLowerCase());
+    return hosts.includes(o.host.toLowerCase());
+  } catch { return false; }
+}
+
 function handleUpgrade(req, socket, head) {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
-  if (config.allowedOrigins.length && !config.allowedOrigins.includes(req.headers.origin)) {
+  if (config.allowedOrigins.length && !config.allowedOrigins.includes(req.headers.origin) && !sameHost(req)) {
+    console.warn('[ws] rejected origin', req.headers.origin);
     return rejectUpgrade(socket, 403, 'Forbidden');
   }
   const ws = acceptUpgrade(req, socket, head);
@@ -126,4 +142,4 @@ function startHeartbeat() {
   return () => clearInterval(timer);
 }
 
-module.exports = { handleUpgrade, startHeartbeat };
+module.exports = { handleUpgrade, startHeartbeat, dispatch };

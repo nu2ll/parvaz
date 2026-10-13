@@ -82,7 +82,7 @@ async function until(fn, label, ms = 3000) {
   win.window = win;
   document.addEventListener = (t, fn) => (listeners['doc:' + t] ||= []).push(fn);
   const ctx = vm.createContext(win);
-  for (const f of ['core', 'ui', 'render', 'wallpaper', 'app', 'media', 'panels', 'recorder', 'creator', 'android', 'settings', 'stories', 'calls', 'lock']) {
+  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'media', 'panels', 'recorder', 'creator', 'android', 'settings', 'stories', 'calls', 'lock']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   }
   const run = (code) => vm.runInContext(code, ctx);
@@ -284,6 +284,33 @@ async function until(fn, label, ms = 3000) {
   ok($$('kbd').length > 5, 'shortcut keys rendered');
   run('App.side.popAll()');
   await sleep(300);
+
+  console.log('Telegram sounds');
+  run(`globalThis.__snd = []; const __p = Sound.play.bind(Sound); Sound.play = (n, f) => { __snd.push(n); return __p(n, f); }; App.openChat(${saraChat})`);
+  await sleep(200);
+  run('el.input.value = "صدا دارد؟"; App.sendText()');
+  await until(() => run('__snd.includes("out")'), 'send plays the sent sound');
+  await call('POST', `/api/chats/${saraChat}/messages`, { text: 'جواب' }, sara.token);
+  await until(() => run('__snd.includes("in")'), 'incoming message in the open chat plays the in-chat sound');
+  run('S.settings.chat_sounds = false; __snd.length = 0; Sound.play("out")');
+  ok(true, 'in-chat sounds can be switched off');
+  run('S.settings.chat_sounds = true');
+
+  console.log('WebSocket blocked → HTTP live fallback');
+  run('App.dropSocket(); globalThis.__WS = WebSocket; WebSocket = function () { throw new Error("blocked by network"); }; S.wsFails = 0; App.connect()');
+  await until(() => run('S.pollLive === true && S.wsReady === true'), 'switches to HTTP live events', 8000);
+  ok(!$('.a-title.busy'), 'title stays «کبوتر» while on the fallback');
+  run(`App.openChat(${saraChat})`);
+  await sleep(300);
+  await call('POST', `/api/chats/${saraChat}/messages`, { text: 'از راه HTTP رسید' }, sara.token);
+  await until(() => [...$$('.msg .text')].some((t) => t.textContent.includes('از راه HTTP رسید')), 'incoming message arrives over long-poll', 6000);
+  ok(true, 'realtime works without WebSockets');
+  run('el.input.value = "ارسال از طریق fallback"; App.sendText()');
+  await until(async () => (await call('GET', `/api/chats/${saraChat}/messages`, null, sara.token)).messages.some((m) => m.text === 'ارسال از طریق fallback'), 'sending works over the fallback', 6000);
+  ok(true, 'sending works over HTTP live');
+  run('WebSocket = globalThis.__WS; App.ensureConnected()');
+  await until(() => run('S.wsLive === true && !S.poll'), 'upgrades back to WebSocket', 8000);
+  ok(true, 'back on WebSocket, fallback closed');
 
   console.log('logout');
   run('App.logout(false)');

@@ -267,13 +267,13 @@ function errorText(code, msg) {
   return msg || 'خطای ناشناخته';
 }
 
-async function api(method, url, body) {
+async function api(method, url, body, opts = {}) {
   const headers = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (body !== undefined && body !== null) headers['Content-Type'] = 'application/json';
   if (S.token) headers.Authorization = 'Bearer ' + S.token;
   let res;
   try {
-    res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    res = await fetch(url, { method, headers, body: body !== undefined && body !== null ? JSON.stringify(body) : undefined, signal: opts.signal, cache: 'no-store' });
   } catch {
     throw new ApiError('network', ERRORS.network);
   }

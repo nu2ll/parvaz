@@ -80,7 +80,9 @@ UI.menu = (items, opts = {}) => {
     x = a.right - r.width;
     originX = 'right';
     if (x < 8) { x = a.left; originX = 'left'; }
-    y = opts.up ? a.top - r.height - 6 : a.bottom + 6;
+    // toolbar menus open over their button, like Telegram's popups
+    const overlap = !opts.up && opts.anchor.closest?.('.a-head, .chat-head, .stab-head');
+    y = opts.up ? a.top - r.height - 6 : overlap ? a.top + 2 : a.bottom + 6;
     if (!opts.up && y + r.height > innerHeight - 8) y = a.top - r.height - 6;
     menu.style.transformOrigin = `${originX} ${opts.up ? 'bottom' : 'top'}`;
   } else {

@@ -38,7 +38,8 @@ Rec.bind = (btn) => {
     const mode = btn.dataset.mode;
     if ((mode !== 'mic' && mode !== 'round') || e.button > 0) return;
     e.preventDefault();
-    st = { x: e.clientX, y: e.clientY, started: false };
+    const br = btn.getBoundingClientRect(), cr = el.composer?.getBoundingClientRect();
+    st = { x: e.clientX, y: e.clientY, started: false, sign: cr && cr.left > br.left ? 1 : -1 };
     try { btn.setPointerCapture(e.pointerId); } catch {}
     st.timer = setTimeout(() => {
       if (!st) return;
@@ -51,7 +52,7 @@ Rec.bind = (btn) => {
     const r = S.rec;
     if (!r || r.locked) return;
     const dx = e.clientX - st.x, dy = Math.min(0, e.clientY - st.y);
-    const toInput = document.documentElement.dir === 'rtl' ? dx : -dx; // the input sits on the other side of the button
+    const toInput = dx * (st.sign || -1); // towards the text field, whichever side it is on
     r.ui?.style.setProperty('--slide', Math.max(0, toInput) + 'px');
     r.ui?.style.setProperty('--lift', dy + 'px');
     if (dy < -70) Rec.lock();
@@ -86,6 +87,10 @@ Rec.lock = () => {
   App.updateSendBtn();
 };
 
+Rec.inputOnRight = () => {
+  const br = el.sendBtn?.getBoundingClientRect(), cr = el.composer?.getBoundingClientRect();
+  return !!(br && cr && cr.left > br.left);
+};
 Rec.buildUi = (r) => {
   const tm = h('span', { class: 'tm' }, fmtRec(0));
   const wave = h('div', { class: 'rec-wave' });
@@ -93,9 +98,10 @@ Rec.buildUi = (r) => {
   const ui = h('div', { class: 'rec-ui' + (r.locked ? ' locked' : '') + (r.kind === 'round' ? ' round' : '') },
     ibtn('trash', 'حذف', () => Rec.stop(false), 'rec-trash'),
     h('div', { class: 'rec-pill' }, h('span', { class: 'dot' }), wave, tm),
-    h('div', { class: 'rec-hint' }, icon('chevron', 'flip'), 'برای لغو بکشید'),
+    h('div', { class: 'rec-hint' }, icon('chevron', Rec.inputOnRight() ? 'flip' : ''), 'برای لغو بکشید'),
     pauseBtn,
     h('div', { class: 'rec-lock' }, icon('lock'), icon('down', 'up')));
+  ui.style.setProperty('--dirx', Rec.inputOnRight() ? '1' : '-1');
   Object.assign(r, { ui, tm, wave, pauseBtn });
   el.row.hidden = true;
   el.composer.append(ui);
@@ -170,6 +176,7 @@ Rec.start = async (kind, { hold = false } = {}) => {
     document.body.append(r.overlay);
   }
   navigator.vibrate?.(12);
+  Sound.play('recStart');
   r.timer = setInterval(Rec.tick, 50);
   App.updateSendBtn();
 };
@@ -192,6 +199,7 @@ Rec.stop = (send) => {
   S.rec = null;
   clearInterval(r.timer);
   const duration = Rec.elapsed(r) / 1000;
+  Sound.play(send && duration >= 0.7 ? 'recSend' : 'recCancel');
   r.ui?.remove();
   r.overlay?.remove();
   if (el.row) el.row.hidden = false;

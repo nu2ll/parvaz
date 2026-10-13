@@ -156,6 +156,13 @@ route('POST', '/api/stories/:id/view', (ctx) => stories.view(ctx.user, ctx.param
 route('POST', '/api/stories/:id/react', async (ctx) => stories.react(ctx.user, ctx.params.id, (await body(ctx)).emoji ?? null));
 route('GET', '/api/stories/:id/views', (ctx) => stories.views(ctx.user, ctx.params.id));
 
+// ---- live events over HTTP (fallback when WebSockets are blocked) ----
+const live = require('./live');
+route('POST', '/api/live', (ctx) => { rateLimit(`live:${ctx.user.id}`, 30, 60_000); return live.open(ctx.user, ctx.ip); });
+route('GET', '/api/live/:sid', (ctx) => live.poll(ctx.user, ctx.params.sid, qp(ctx, 'ack')));
+route('POST', '/api/live/:sid/send', async (ctx) => { rateLimit(`livesend:${ctx.user.id}`, 300, 60_000); return live.send(ctx.user, ctx.params.sid, await body(ctx)); });
+route('DELETE', '/api/live/:sid', (ctx) => live.close(ctx.user, ctx.params.sid));
+
 // ---- admin (ADMIN_USERNAMES) ----
 route('POST', '/api/admin/verify', async (ctx) => official.verify(ctx.user, await body(ctx)));
 

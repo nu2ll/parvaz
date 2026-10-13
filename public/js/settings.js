@@ -210,7 +210,8 @@ const SETTINGS_PAGES = {
           setSetting('notify', v);
         }) : UI.row('bell', 'مرورگر شما اعلان را پشتیبانی نمی‌کند'),
         UI.switchRow('eye', 'پیش‌نمایش پیام', 'متن پیام در اعلان دیده شود', S.settings.notify_preview !== false, (v) => setSetting('notify_preview', v)),
-        UI.switchRow('volume', 'صدا', null, S.settings.sound !== false, (v) => { setSetting('sound', v); if (v) App.beep(); }),
+        UI.switchRow('volume', 'صداهای داخل برنامه', 'صدای پیام تازه در گفتگوهای دیگر', S.settings.sound !== false, (v) => { setSetting('sound', v); if (v) Sound.play('notify', true); }),
+        UI.switchRow('music', 'صداهای داخل گفتگو', 'صدای ارسال و دریافت پیام، ضبط صدا', S.settings.chat_sounds !== false, (v) => { setSetting('chat_sounds', v); if (v) Sound.play('out', true); }),
       ]),
       UI.section('اعلان گفتگوها', [
         UI.switchRow('user', 'گفتگوهای خصوصی', null, S.settings.notify_private !== false, (v) => setSetting('notify_private', v)),

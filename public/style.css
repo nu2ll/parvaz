@@ -1401,3 +1401,13 @@ html, body { overscroll-behavior: none; }
 }
 .head-actions { display: flex; align-items: center; gap: 2px; }
 .conn-st { color: var(--text-2) !important; }
+
+/* Telegram keeps its toolbars in the same place in every language:
+   title + back on the left, actions / ⋮ on the right, send on the right. Content stays RTL. */
+.a-head, .bottom-nav, .chat-head, .stab-head, .composer-wrap, .list-wrap > .folders, .modal-head { direction: ltr; }
+.composer, .rec-tip, .chat-head .who .wt, .bottom-nav .nb-l, .a-title .tx, .stab-head h2 { direction: rtl; }
+.chat-head .who .wt { text-align: left; }
+.stab-head h2 { text-align: left; unicode-bidi: plaintext; }
+.chat-head > .back svg, .stab-head > .ibtn:first-child svg, .modal-head > .ibtn:first-child svg { transform: scaleX(-1); }
+.rec-ui .rec-lock { inset-inline-end: auto; right: -58px; }
+.rec-ui .rec-hint { transform: translateX(calc(var(--slide, 0px) * var(--dirx, -1))); }
