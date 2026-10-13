@@ -82,7 +82,7 @@ async function until(fn, label, ms = 3000) {
   win.window = win;
   document.addEventListener = (t, fn) => (listeners['doc:' + t] ||= []).push(fn);
   const ctx = vm.createContext(win);
-  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'native', 'media', 'panels', 'recorder', 'creator', 'android', 'attach', 'settings', 'stories', 'calls', 'lock', 'tg', 'select', 'storycam']) {
+  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'native', 'media', 'panels', 'recorder', 'creator', 'android', 'attach', 'settings', 'stories', 'calls', 'lock', 'tg', 'select', 'storycam', 'chrome']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   }
   const run = (code) => vm.runInContext(code, ctx);

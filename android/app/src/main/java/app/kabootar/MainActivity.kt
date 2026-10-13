@@ -30,7 +30,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import java.io.ByteArrayInputStream
 import java.io.IOException
 
@@ -56,6 +58,8 @@ class MainActivity : ComponentActivity() {
     private var splashHiding = false
     private var splashStart = 0L
     private var launchChat = 0
+    private var insetTop = 0f
+    private var insetBottom = 0f
     private val server: Uri by lazy { Uri.parse(BuildConfig.SERVER_URL) }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermission: PermissionRequest? = null
@@ -108,6 +112,21 @@ class MainActivity : ComponentActivity() {
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
+        // Telegram draws its screens under the status bar and the navigation bar (edge to edge):
+        // the web page gets the bar sizes as CSS variables, the keyboard still pushes the page up
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= 29) { window.isNavigationBarContrastEnforced = false; window.isStatusBarContrastEnforced = false }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val imeOn = insets.isVisible(WindowInsetsCompat.Type.ime())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.setPadding(bars.left, 0, bars.right, if (imeOn) ime.bottom else 0)
+            val d = resources.displayMetrics.density
+            insetTop = bars.top / d
+            insetBottom = if (imeOn) 0f else bars.bottom / d
+            pushInsets()
+            WindowInsetsCompat.CONSUMED
+        }
         web.setBackgroundColor(bg)
         web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         web.overScrollMode = View.OVER_SCROLL_NEVER
@@ -143,6 +162,7 @@ class MainActivity : ComponentActivity() {
                 if (url.host == server.host && url.scheme == "https") return false // stay in the app
                 return try { startActivity(Intent(Intent.ACTION_VIEW, url)); true } catch (e: ActivityNotFoundException) { true }
             }
+            override fun onPageFinished(view: WebView, url: String?) { pushInsets() }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) { view.loadData(OFFLINE_PAGE, "text/html; charset=utf-8", "UTF-8"); hideSplash() }
             }
@@ -235,12 +255,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /* ---------- status + navigation bars follow the screen behind them ---------- */
+    private fun pushInsets() {
+        if (!::web.isInitialized) return
+        val t = insetTop; val b = insetBottom
+        web.evaluateJavascript("(function(s){s.setProperty('--sat','${t}px');s.setProperty('--sab','${b}px');window.dispatchEvent(new Event('kbinsets'))})(document.documentElement.style)", null)
+    }
+
+    /* ---------- status + navigation bars: transparent, icons follow the screen behind them ---------- */
     private fun applyBars(top: Int, bottom: Int, lightTop: Boolean, lightBottom: Boolean) {
         @Suppress("DEPRECATION")
-        window.statusBarColor = top
+        window.statusBarColor = Color.TRANSPARENT
         @Suppress("DEPRECATION")
-        window.navigationBarColor = bottom
+        window.navigationBarColor = Color.TRANSPARENT
         val ctl = WindowCompat.getInsetsController(window, window.decorView)
         ctl.isAppearanceLightStatusBars = lightTop
         ctl.isAppearanceLightNavigationBars = lightBottom
@@ -315,6 +341,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        @JavascriptInterface fun insets(): String = "{\"top\":$insetTop,\"bottom\":$insetBottom}"
         @JavascriptInterface fun clearChat(id: Int) { if (id != 0) Notifier.cancel(applicationContext, id) }
         @JavascriptInterface fun takeLaunchChat(): Int { val v = launchChat; launchChat = 0; return v }
     }

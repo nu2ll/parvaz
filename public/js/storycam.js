@@ -53,7 +53,8 @@ const StoryCam = {
   async startCam(cur) {
     this.stopCam(cur);
     if (!navigator.mediaDevices?.getUserMedia) { cur.noCam.hidden = false; return; }
-    const video = { facingMode: cur.facing, width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } };
+    // ask in the sensor's own (landscape) shape and never crop: asking 1080×1920 made phones crop = zoomed picture
+    const video = { facingMode: cur.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, resizeMode: 'none' };
     let s = null;
     try { s = await navigator.mediaDevices.getUserMedia({ video, audio: true }); }
     catch { try { s = await navigator.mediaDevices.getUserMedia({ video, audio: false }); } catch { s = null; } }

@@ -164,7 +164,7 @@ const Attach = {
     const cur = this.cur;
     if (!Native.has('camera') || !navigator.mediaDevices?.getUserMedia || S.settings.lite) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 360 }, height: { ideal: 480 }, frameRate: { ideal: 24 } }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 }, resizeMode: 'none' }, audio: false });
       if (this.cur !== cur || cur.tab !== 'gallery') { stream.getTracks().forEach((t) => t.stop()); return; }
       cur.stream = stream;
       const v = h('video', { autoplay: true, muted: true, playsinline: true });

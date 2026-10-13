@@ -143,7 +143,7 @@ Rec.start = async (kind, { hold = false } = {}) => {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia(kind === 'round'
-      ? { video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }, audio: true }
+      ? { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, resizeMode: 'none' }, audio: true }
       : { audio: true });
   } catch {
     Rec.pending = null;

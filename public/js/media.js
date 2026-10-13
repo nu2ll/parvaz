@@ -158,7 +158,7 @@ UI.emojiDropdown = (anchor, handlers) => {
   if (dock) {
     // Telegram Android: the panel sits under the composer, exactly where the keyboard was
     pop.style.height = (handlers.height || 300) + 'px';
-    dock.after(pop);
+    dock.append(pop); // inside the floating bottom, so the card rides on top of the panel
     document.body.classList.add('emoji-docked');
     showTab(handlers.noStickers ? 'emoji' : tab);
     return pop;

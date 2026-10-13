@@ -948,8 +948,7 @@ App.renderHeader = (c = S.chats.get(S.active)) => {
         h('div', { class: 't', dir: 'auto' }, h('span', { class: 'tt' }, title), !t && c.verified ? R.verified() : null, c.muted ? icon('muted', 'mute-ic') : null),
         status ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, status, st.typing ? R.typingDots() : null) : null)),
     h('div', { class: 'head-actions' },
-      canCall ? ibtn('phone', 'تماس', () => App.startCall(c, false), 'call-btn') : null,
-      ibtn('search', 'جستجو در گفتگو', () => App.openChatSearch()),
+      canCall ? ibtn('oPhone', 'تماس', () => App.startCall(c, false), 'call-btn') : null,
       el.moreBtn));
   if (App.connState && el.appTitle?.classList.contains('busy')) App.setConn(App.connState);
 };
@@ -958,6 +957,7 @@ App.headerMenu = (c, anchor) => {
   const priv = c.type === 'private' && !isSaved(c);
   const p = c.peer;
   UI.menu([
+    { icon: 'search', label: 'جستجو', onClick: () => App.openChatSearch() },
     priv && !p.blocked && !p.system ? { icon: 'video', label: 'تماس تصویری', onClick: () => App.startCall(c, true) } : null,
     { icon: 'info', label: c.type === 'private' ? 'مشاهده پروفایل' : c.type === 'channel' ? 'اطلاعات کانال' : 'اطلاعات گروه', onClick: () => App.openInfo(c.id) },
     !isSaved(c) ? { icon: c.muted ? 'bell' : 'muted', label: c.muted ? 'فعال کردن اعلان' : 'بی‌صدا کردن', onClick: () => App.chatSetting(c, { muted: !c.muted }) } : null,
@@ -1210,15 +1210,20 @@ App.onScroll = async () => {
   const key = App.mkey();
   const st = S.msgs.get(key);
   if (!st) return;
-  App.stick = App.atBottom() && !st.hasNewer;
+  const bottom = App.atBottom();
+  App.stick = bottom && !st.hasNewer;
   const c = S.chats.get(id);
   const t = App.activeTopic();
   const unread = t ? t.unread : c?.unread;
-  const showFab = !App.atBottom() || st.hasNewer;
-  el.fab.classList.toggle('hide', !showFab);
-  el.fab.querySelector('.badge')?.remove();
-  if (showFab && unread) el.fab.append(h('span', { class: 'badge' }, fa(unread)));
-  if (App.atBottom() && !st.hasNewer) App.markRead();
+  const showFab = !bottom || st.hasNewer;
+  if (el.fab.classList.contains('hide') === showFab) el.fab.classList.toggle('hide', !showFab);
+  const want = showFab && unread ? fa(unread) : '';
+  if (el.fab.dataset.n !== want) {
+    el.fab.dataset.n = want;
+    el.fab.querySelector('.badge')?.remove();
+    if (want) el.fab.append(h('span', { class: 'badge' }, want));
+  }
+  if (bottom && !st.hasNewer) App.markRead();
 
   if (box.scrollTop < 400 && st.hasMore && !loadingOlder) {
     loadingOlder = true;
@@ -1295,7 +1300,8 @@ App.buildComposer = (c) => {
     ['b', '**', 'پررنگ'], ['i', '__', 'کج'], ['s', '~~', 'خط‌خورده'], ['code', '`', 'تک‌فاصله'], ['spoiler', '||', 'اسپویلر'],
   ].map(([cls, mark, label]) => h('button', { type: 'button', class: 'f-' + cls, title: label, onmousedown: (e) => { e.preventDefault(); App.wrapSelection(mark); } }, cls === 'spoiler' ? '▒' : cls === 'code' ? '</>' : cls.toUpperCase())),
   h('button', { type: 'button', class: 'f-link', title: 'لینک', onmousedown: async (e) => { e.preventDefault(); App.insertLink(); } }, icon('link')));
-  el.composer = h('div', { class: 'composer' }, el.bar, el.fmt, el.row, R.tail());
+  el.expandBtn = ibtn('fullscreen', 'بزرگ کردن', () => { el.composer.classList.toggle('expanded'); App.autoGrow(); el.input.focus(); }, 'expand-btn');
+  el.composer = h('div', { class: 'composer' }, el.bar, el.fmt, el.row, el.expandBtn, R.tail());
   el.sendBtn = h('button', { class: 'send-btn', type: 'button', 'aria-label': 'ارسال', onclick: (e) => App.onSendBtn(e) });
   el.sendBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); App.sendBtnMenu(e); });
   UI.longPress(el.sendBtn, (e) => { if (el.input?.value.trim()) App.sendBtnMenu(e); });
@@ -1382,8 +1388,12 @@ App.toggleEmoji = () => {
 
 App.autoGrow = () => {
   if (!el.input) return;
+  const big = el.composer?.classList.contains('expanded');
   el.input.style.height = 'auto';
-  el.input.style.height = Math.min(el.input.scrollHeight, 220) + 'px';
+  const sh = el.input.scrollHeight;
+  el.input.style.height = Math.min(sh, big ? Math.round(innerHeight * 0.5) : 220) + 'px';
+  el.composer?.classList.toggle('multi', sh > 110 || !!big);
+  el.composer?.classList.toggle('has-text', !!el.input.value.trim());
 };
 App.insertText = (t, keepFocus) => {
   const i = el.input;

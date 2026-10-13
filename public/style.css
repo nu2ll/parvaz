@@ -1,5 +1,5 @@
 /* Kabootar — Telegram Web K look & feel. Light + dark themes, RTL first. */
-:root {
+:root { --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
   --accent: #3390ec;
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --accent-hover: color-mix(in srgb, var(--accent) 88%, #000);
@@ -988,7 +988,7 @@ svg.i { width: 24px; height: 24px; fill: currentColor; flex: none; display: bloc
   .chat-head .back { display: grid; }
   .info { position: fixed; inset: 0; width: 100%; z-index: 20; }
   .messages-inner, .composer-wrap, .bottom-action, .select-bar { padding-inline: 8px; }
-  .composer-wrap { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .composer-wrap { padding-bottom: max(8px, var(--sab)); }
   .bubble { max-width: 88%; }
   .fab-down { bottom: 76px; inset-inline-end: 10px; }
   .modal-wrap { padding: 8px; }
@@ -1352,7 +1352,7 @@ html, body { overscroll-behavior: none; }
 .bottom-nav.hide ~ .fabs, .root[hidden] .fabs { opacity: 0; pointer-events: none; }
 
 /* bottom navigation pill */
-.bottom-nav { position: absolute; bottom: max(12px, env(safe-area-inset-bottom)); inset-inline: 14px; height: 66px; border-radius: 33px; z-index: 8;
+.bottom-nav { position: absolute; bottom: max(12px, var(--sab)); inset-inline: 14px; height: 66px; border-radius: 33px; z-index: 8;
   background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6);
   box-shadow: 0 4px 24px rgba(0,0,0,.14), 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
   display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; padding: 5px; transition: transform .3s cubic-bezier(.2,.9,.3,1), opacity .25s; }
@@ -1490,7 +1490,7 @@ body.booted #app { opacity: 1; transition: opacity .22s ease; }
 .att-perm .tt { font-weight: 600; font-size: 17px; margin-bottom: 6px; }
 .att-perm .st { color: var(--text-2); font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
 .att-more { display: block; margin: 12px auto 0; color: var(--accent); font-weight: 500; padding: 10px 18px; border-radius: 20px; }
-.att-tabs { position: absolute; bottom: max(10px, env(safe-area-inset-bottom)); inset-inline: 10px; height: 66px; border-radius: 33px; background: var(--surface);
+.att-tabs { position: absolute; bottom: max(10px, var(--sab)); inset-inline: 10px; height: 66px; border-radius: 33px; background: var(--surface);
   box-shadow: 0 2px 14px rgba(0,0,0,.16), 0 0 0 1px rgba(0,0,0,.03); display: flex; gap: 2px; padding: 5px; overflow-x: auto; scrollbar-width: none; direction: ltr; z-index: 2; }
 [data-theme="dark"] .att-tabs { background: #2a2a2a; box-shadow: 0 2px 14px rgba(0,0,0,.5); }
 .att-tabs::-webkit-scrollbar { display: none; }
@@ -1498,7 +1498,7 @@ body.booted #app { opacity: 1; transition: opacity .22s ease; }
   font-size: 12.5px; color: var(--text); transition: background .2s, color .2s; }
 .att-tab svg { width: 26px; height: 26px; }
 .att-tab.on { background: var(--accent-soft); color: var(--accent); }
-.att-sendbar { position: absolute; bottom: max(10px, env(safe-area-inset-bottom)); inset-inline: 10px; display: flex; gap: 8px; align-items: center; z-index: 2; direction: ltr; animation: attUp .22s cubic-bezier(.2,.9,.25,1); }
+.att-sendbar { position: absolute; bottom: max(10px, var(--sab)); inset-inline: 10px; display: flex; gap: 8px; align-items: center; z-index: 2; direction: ltr; animation: attUp .22s cubic-bezier(.2,.9,.25,1); }
 .att-sendbar .cap { flex: 1; min-width: 0; height: 52px; border-radius: 26px; border: 0; outline: none; padding: 0 20px; font-size: 16px; background: var(--surface);
   box-shadow: 0 2px 14px rgba(0,0,0,.16); direction: rtl; }
 [data-theme="dark"] .att-sendbar .cap { background: #2a2a2a; }
@@ -1655,7 +1655,7 @@ body.booted #app { opacity: 1; transition: opacity .22s ease; }
 .root-chats.search-collapsed .list::after { content: ''; display: block; height: 64px; }
 /* emoji panel docked under the composer, in the keyboard's place */
 .emoji-dock { flex: none; display: flex; flex-direction: column; background: var(--surface); overflow: hidden; position: relative; z-index: 3;
-  border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+  border-top: 1px solid var(--border); padding-bottom: var(--sab); }
 [data-theme="dark"] .emoji-dock { border-top-color: #2c2c2c; }
 .emoji-dock .ep-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 body.emoji-docked .fab-down { display: none; }
@@ -1758,7 +1758,7 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 /* ---------- message selection ---------- */
 .chat-head.sel-head { background: var(--surface) !important; margin: 0 !important; height: 56px !important; padding: 0 8px !important; gap: 2px !important;
   box-shadow: 0 1px 0 var(--border) !important; border-radius: 0 !important; animation: cselIn .16s ease-out; }
-.select-bar.tg-sel { display: flex; justify-content: space-between; align-items: center; direction: ltr; padding: 6px 12px max(8px, env(safe-area-inset-bottom));
+.select-bar.tg-sel { display: flex; justify-content: space-between; align-items: center; direction: ltr; padding: 6px 12px max(8px, var(--sab));
   background: var(--surface); box-shadow: 0 -1px 0 var(--border); }
 .tg-sel .sb-btn { display: flex; gap: 8px; align-items: center; font-weight: 600; color: var(--accent); padding: 10px 16px; border-radius: 22px; font-size: 15px; }
 .tg-sel .sb-btn:active { background: var(--hover); }
@@ -1776,7 +1776,7 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 .scam.out { opacity: 0; transform: translateY(5%); }
 .scam-view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .scam-view.mirror { transform: scaleX(-1); }
-.scam-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; padding: max(10px, env(safe-area-inset-top)) 10px 18px; direction: ltr; z-index: 3;
+.scam-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; padding: max(10px, var(--sat)) 10px 18px; direction: ltr; z-index: 3;
   background: linear-gradient(rgba(0,0,0,.35), transparent); }
 .scam-top .sp { flex: 1; }
 .scam-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgba(0,0,0,.28); transition: opacity .2s, transform .15s; }
@@ -1784,7 +1784,7 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 .scam-btn .i { width: 26px; height: 26px; }
 .scam-timer { position: absolute; left: 50%; transform: translateX(-50%); background: #e53935; color: #fff; font-weight: 600; border-radius: 14px; padding: 3px 12px; font-variant-numeric: tabular-nums; }
 .scam-timer[hidden] { display: none; }
-.scam-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 30px max(28px, calc(env(safe-area-inset-bottom) + 20px)); display: flex; align-items: center;
+.scam-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 30px max(28px, calc(var(--sab) + 20px)); display: flex; align-items: center;
   justify-content: space-between; direction: ltr; z-index: 3; background: linear-gradient(transparent, rgba(0,0,0,.4)); }
 .scam-gal { width: 46px; height: 46px; border-radius: 12px; overflow: hidden; border: 2px solid #fff; display: grid; place-items: center; background: rgba(255,255,255,.12); color: #fff; transition: opacity .2s; }
 .scam-gal img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1797,7 +1797,7 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); }
 .scam.recording .scam-shutter b { background: #e53935; transform: scale(.5); }
 .scam.recording .scam-gal, .scam.recording .scam-bottom .scam-btn, .scam.recording .scam-hint, .scam.recording .scam-close { opacity: 0; pointer-events: none; }
-.scam-hint { position: absolute; left: 0; right: 0; bottom: calc(max(28px, calc(env(safe-area-inset-bottom) + 20px)) + 104px); text-align: center; font-size: 13.5px;
+.scam-hint { position: absolute; left: 0; right: 0; bottom: calc(max(28px, calc(var(--sab) + 20px)) + 104px); text-align: center; font-size: 13.5px;
   color: rgba(255,255,255,.9); text-shadow: 0 1px 4px rgba(0,0,0,.6); z-index: 3; animation: hintOut .4s ease 4s forwards; pointer-events: none; }
 @keyframes hintOut { to { opacity: 0; } }
 .scam-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 4; }
@@ -1811,7 +1811,7 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 .scam-nocam span { color: rgba(255,255,255,.7); font-size: 14px; line-height: 1.7; max-width: 300px; }
 .scam-nocam .btn { margin-top: 8px; }
 .scam-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80%; background: #1c1c1d; color: #fff; border-radius: 18px 18px 0 0; z-index: 10;
-  transform: translateY(100%); transition: transform .28s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+  transform: translateY(100%); transition: transform .28s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; padding-bottom: var(--sab); }
 .scam-sheet.in { transform: none; }
 .scam-sheet .grip { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.3); margin: 8px auto 4px; flex: none; }
 .scam-sheet .st-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 6px; direction: ltr; flex: none; }
@@ -1824,7 +1824,7 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 .scam-grid .att-perm, .scam-grid .att-empty { grid-column: 1 / -1; color: #fff; }
 .scam-shade { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 9; opacity: 0; transition: opacity .2s; }
 .scam-shade.in { opacity: 1; }
-.sp-sheet { padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+.sp-sheet { padding: 0 16px max(16px, var(--sab)); }
 .sp-title { font-size: 18px; font-weight: 600; padding: 8px 4px 12px; }
 .sp-opt { display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px 6px; border-radius: 12px; text-align: start; color: #fff; }
 .sp-opt:active { background: rgba(255,255,255,.06); }
@@ -1844,10 +1844,10 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 .sed.in { opacity: 1; }
 .sed-bg { position: absolute; inset: 0; background: center / cover; filter: blur(30px) brightness(.5); transform: scale(1.2); }
 .sed-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.sed-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; padding: max(10px, env(safe-area-inset-top)) 10px 10px; direction: ltr; z-index: 2; }
+.sed-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; padding: max(10px, var(--sat)) 10px 10px; direction: ltr; z-index: 2; }
 .sed-top .sp { flex: 1; }
 .sed-mute { color: #fff !important; background: rgba(0,0,0,.28) !important; }
-.sed-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 12px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,.65));
+.sed-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 12px max(12px, var(--sab)); background: linear-gradient(transparent, rgba(0,0,0,.65));
   z-index: 2; display: flex; flex-direction: column; gap: 10px; }
 .sed-cap textarea { width: 100%; resize: none; border: 0; outline: none; border-radius: 22px; background: rgba(0,0,0,.45); color: #fff; padding: 11px 16px;
   font: inherit; font-size: 15.5px; line-height: 1.4; max-height: 110px; display: block; }
@@ -1864,3 +1864,145 @@ body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; poin
 /* upload progress on "My story" */
 .story-item .ring.uploading, .story-stack .ss.me.uploading {
   background: conic-gradient(var(--accent) calc(var(--p, 0) * 360deg), color-mix(in srgb, var(--accent) 22%, transparent) 0) !important; }
+
+/* =====================================================================
+   v4.0: new Telegram for Android look (floating glass) + performance
+   ===================================================================== */
+:root {
+  --glass: rgba(255,255,255,.66); --glass-line: rgba(255,255,255,.75);
+  --glass-shadow: 0 2px 14px rgba(0,0,0,.13), inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.04);
+  --glass-blur: blur(16px) saturate(1.7);
+}
+[data-theme="dark"] {
+  --glass: rgba(34,34,36,.68); --glass-line: rgba(255,255,255,.08);
+  --glass-shadow: 0 2px 16px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.07);
+}
+/* the glass pieces (only small floating parts are blurred, never the scrolling list itself) */
+#chat .chat-head > .back, #chat .chat-head .who, #chat .chat-head .head-actions, #chat .pinned-bar, #chat .audio-bar, #chat .composer,
+#chat .fab-down, #chat .chat-search, #chat .bottom-action button, #sidebar .bottom-nav, #sidebar .a-head .ibtn, #sidebar .list-wrap > .folders, #sidebar .fab-cam {
+  background: var(--glass) !important; border: 1px solid var(--glass-line); box-shadow: var(--glass-shadow) !important;
+  -webkit-backdrop-filter: var(--glass-blur) !important; backdrop-filter: var(--glass-blur) !important; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass: rgba(255,255,255,.94); } [data-theme="dark"] { --glass: rgba(34,34,36,.95); }
+}
+/* "lite" phones: same shapes, no blur */
+.lite #chat .chat-head > .back, .lite #chat .chat-head .who, .lite #chat .chat-head .head-actions, .lite #chat .pinned-bar, .lite #chat .audio-bar, .lite #chat .composer,
+.lite #chat .fab-down, .lite #sidebar .bottom-nav, .lite #sidebar .a-head .ibtn, .lite #sidebar .list-wrap > .folders {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.lite { --glass: rgba(255,255,255,.95); } .lite[data-theme="dark"] { --glass: rgba(34,34,36,.96); }
+
+/* ---------- chat: messages fill the screen, chrome floats over them ---------- */
+.chat.overlay-chrome > .chat-top { position: absolute; top: 0; left: 0; right: 0; z-index: 6; pointer-events: none; padding-top: var(--sat); }
+.chat.overlay-chrome > .chat-top[hidden] { display: none; }
+.chat.overlay-chrome > .chat-top > * { pointer-events: auto; }
+.chat.overlay-chrome > .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; pointer-events: none; }
+.chat.overlay-chrome > .bottom > * { pointer-events: auto; }
+.chat.overlay-chrome > .messages { padding-top: calc(var(--top-h, 70px) + 6px); padding-bottom: calc(var(--bottom-h, 76px) + 6px); scroll-padding-top: calc(var(--top-h, 70px) + 6px); }
+.chat.overlay-chrome .search-results { top: var(--top-h, 70px); }
+
+/* top: [←] [avatar · name / status] [📞 ⋮]  (same place in every language, like Telegram) */
+#chat .chat-head { background: transparent !important; box-shadow: none !important; border: 0; margin: 8px 10px 0; padding: 0; height: 54px; gap: 8px; direction: ltr; border-radius: 0; animation: none; }
+#chat .chat-head > .back { display: grid; width: 52px; height: 52px; border-radius: 50%; flex: none; color: var(--text); }
+#chat .chat-head > .back .i { width: 24px; height: 24px; }
+#chat .chat-head .who { flex: 1; min-width: 0; height: 52px; border-radius: 26px; padding: 0 16px 0 5px; gap: 10px; display: flex; align-items: center; }
+#chat .chat-head .who .avatar { width: 42px; height: 42px; font-size: 16px; flex: none; }
+#chat .chat-head .who .wt { flex: 1; min-width: 0; text-align: right; direction: rtl; }
+#chat .chat-head .who .t { font-size: 17px; font-weight: 600; justify-content: flex-start; }
+#chat .chat-head .who .st { font-size: 13.5px; }
+#chat .chat-head .head-actions { height: 52px; border-radius: 26px; padding: 0 4px; gap: 0; display: flex; align-items: center; flex: none; }
+#chat .chat-head .head-actions .ibtn { width: 44px; height: 44px; color: var(--text); }
+#chat .chat-head .head-actions .ibtn .i { width: 23px; height: 23px; }
+#chat .chat-head .back-badge { top: -4px; right: -6px; box-shadow: 0 0 0 2px var(--surface); }
+/* selection keeps the same floating shape */
+#chat .chat-head.sel-head { background: var(--glass) !important; border: 1px solid var(--glass-line); box-shadow: var(--glass-shadow) !important; border-radius: 27px !important;
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); margin: 8px 10px 0 !important; height: 54px !important; padding: 0 6px !important; }
+
+/* pinned message pill: [| title / text] [pin] */
+#chat .topbars { margin: 8px 10px 0; display: flex; flex-direction: column; gap: 8px; overflow: visible; border-radius: 0; background: none; box-shadow: none; }
+#chat .pinned-bar, #chat .audio-bar { height: 56px; border-radius: 28px; padding: 0 6px 0 16px; gap: 10px; direction: ltr; }
+#chat .pinned-bar .line { width: 3px; height: 34px; border-radius: 2px; background: repeating-linear-gradient(var(--accent) 0 9px, transparent 9px 12px); }
+#chat .pinned-bar .body { text-align: left; }
+#chat .pinned-bar .lbl { font-size: 14.5px; font-weight: 600; }
+#chat .pinned-bar .txt { font-size: 14.5px; color: var(--text); }
+#chat .pinned-bar .pthumb { border-radius: 8px; }
+#chat .pinned-bar .ibtn { color: var(--text-2); }
+#chat .chat-search { margin: 8px 10px 0; border-radius: 26px; border-top: 0; height: 52px; }
+
+/* side button: ⌄ with the unread counter on top */
+#chat .fab-down { width: 50px; height: 50px; right: 12px; left: auto; inset-inline-end: auto; bottom: calc(var(--bottom-h, 76px) + 14px); color: var(--text-2);
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s; z-index: 5; }
+#chat .fab-down .i { width: 26px; height: 26px; }
+#chat .fab-down .badge { top: -12px; min-width: 26px; height: 26px; border-radius: 13px; font-size: 13.5px; box-shadow: 0 0 0 2px var(--surface); }
+#chat .fab-down.hide { transform: translateY(16px) scale(.9); }
+
+/* bottom: one glass card, reply inside it, send / mic circle in its corner */
+#chat .composer-wrap, #chat .bottom-action { max-width: 760px; padding: 0 10px max(10px, var(--sab)); margin: 0 auto; position: relative; display: block; }
+#chat .composer { border-radius: 28px !important; min-height: 58px; padding-right: 62px; }
+#chat .composer > .tail { display: none; }
+#chat .composer .row { min-height: 56px; padding: 2px 4px 2px 4px; gap: 0; align-items: flex-end; }
+#chat .composer textarea { padding: 16px 8px 15px; font-size: 17px; line-height: 1.38; color: var(--text); text-align: right; }
+#chat .composer textarea::placeholder { color: var(--text-2); }
+#chat .composer .ibtn { width: 44px; height: 44px; margin-bottom: 6px; color: var(--text-2); }
+#chat .composer .ibtn .i { width: 26px; height: 26px; }
+#chat .composer.has-text .attach-btn { display: none; }
+#chat .send-btn { position: absolute !important; right: 18px; bottom: calc(max(10px, var(--sab)) + 5px); width: 50px; height: 50px; z-index: 7;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent) !important; }
+#chat .send-btn .i { width: 26px; height: 26px; }
+#chat .send-btn.holding { transform: scale(calc(1.5 * var(--lvl, 1))); }
+/* reply / edit preview inside the card: [↩ | to … / text] [✕] */
+#chat .composer .bar { direction: ltr; padding: 10px 6px 0 12px; gap: 10px; margin-right: -56px; }
+#chat .composer .bar .ic { color: var(--accent); padding: 0 2px; }
+#chat .composer .bar .ic .i { width: 24px; height: 24px; }
+#chat .composer .bar .body { border: 0; padding: 0; text-align: left; }
+#chat .composer .bar .lbl { font-size: 14.5px; font-weight: 600; }
+#chat .composer .bar .txt { font-size: 14.5px; color: var(--text-2); }
+#chat .composer .bar .ibtn { width: 40px; height: 40px; margin: 0; }
+/* long text: ⤢ to make the box bigger */
+#chat .composer .expand-btn { display: none; position: absolute; right: 12px; top: 8px; width: 36px; height: 36px; margin: 0; }
+#chat .composer.multi .expand-btn { display: grid; }
+#chat .composer.multi .bar:not([hidden]) ~ .expand-btn { top: 58px; }
+#chat .composer.expanded textarea { max-height: 50vh; }
+#chat .rec-ui { height: 56px; }
+#chat .rec-tip { right: 8px; left: auto; bottom: 76px; }
+#chat .bottom-action button { width: 100%; height: 54px; border-radius: 27px; font-weight: 600; color: var(--accent); }
+#chat .bottom-action button.danger { color: var(--danger); }
+#chat .select-bar.tg-sel { margin: 0 10px max(10px, var(--sab)); border-radius: 28px; background: var(--glass); border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-shadow); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); padding: 4px 8px; }
+/* the docked emoji panel sits under the card */
+#chat .emoji-dock { pointer-events: auto; border-top: 0; margin-top: 8px; }
+
+/* ---------- main screen: same glass family ---------- */
+#sidebar .a-head .ibtn { width: 46px; height: 46px; border-radius: 50%; color: var(--text); }
+#sidebar .a-head { gap: 8px; }
+#sidebar .list-wrap > .folders { border-radius: 26px; }
+#sidebar .bottom-nav .nb.on { background: color-mix(in srgb, var(--text) 9%, transparent); }
+
+/* =====================================================================
+   performance: nothing inside the scrolling list is blurred any more (it was blurring every
+   date chip, time label and photo badge on every frame), no permanent layers, no big shadows
+   on full-screen layers while they move
+   ===================================================================== */
+.day span, .service span, .loading-more, .empty-chat, .chat-empty span, .meta.overlay, .no-bg .meta, .photo .badge-gif, .photo .vdur, .spoiler-cover span, .photo .vplay {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.day span, .service span, .loading-more, .empty-chat, .chat-empty span { background: color-mix(in srgb, var(--service) 100%, rgba(0,0,0,.08)); }
+.stab { will-change: auto; }
+.stab.in:not(.main) { box-shadow: -1px 0 0 rgba(0,0,0,.08); }
+@media (max-width: 760px) {
+  .chat { box-shadow: -1px 0 0 rgba(0,0,0,.1); will-change: auto; }
+  .info, [dir="rtl"] .info { box-shadow: -1px 0 0 rgba(0,0,0,.1); }
+  body.swiping .kb-page, body.swiping .kb-under, body.swipe-settle .kb-page, body.swipe-settle .kb-under { will-change: transform; }
+}
+.messages { overflow-anchor: none; contain: strict; }
+.messages-inner { contain: layout style; }
+.msg.appear { animation-duration: .18s; }
+
+/* edge to edge (Android app): screens run under the status bar and the navigation bar */
+.root, .stab:not(.main), .info .stab.main { padding-top: var(--sat); }
+.root-chats .list-wrap > .list, .root-contacts > .list { padding-bottom: calc(110px + var(--sab)); }
+.toast { bottom: calc(24px + var(--sab)); }
+.story-viewer .sv-top { padding-top: calc(8px + var(--sat)); }
+.story-viewer .sv-foot { padding-bottom: calc(12px + var(--sab)); }
+.story-viewer .sv-close { top: calc(22px + var(--sat)) !important; }
+.lightbox { padding-top: var(--sat); padding-bottom: var(--sab); box-sizing: border-box; }
+.call-ui:not(.mini) { padding-top: var(--sat); padding-bottom: var(--sab); box-sizing: border-box; }
+.att-sheet { padding-bottom: var(--sab); }

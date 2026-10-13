@@ -77,3 +77,12 @@ if (typeof MutationObserver !== 'undefined' && document.body) {
   let t = 0;
   new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => App.syncBars?.(), 16); }).observe(document.body, { childList: true });
 }
+
+// status bar / navigation bar sizes (the app draws under them like Telegram)
+(() => {
+  try {
+    const raw = window.KabootarNative?.insets?.();
+    if (raw) { const v = JSON.parse(raw); const st = document.documentElement.style; st.setProperty('--sat', (v.top || 0) + 'px'); st.setProperty('--sab', (v.bottom || 0) + 'px'); }
+  } catch {}
+  addEventListener('kbinsets', () => App.syncChrome?.());
+})();
