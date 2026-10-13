@@ -70,7 +70,7 @@ jobs:
                   versionCode = 36
                   versionName = "3.6.0"
                   buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
-                  manifestPlaceholders["serverHost"] = java.net.URI(serverUrl).host
+                  manifestPlaceholders["serverHost"] = serverUrl.substringAfter("://").substringBefore("/").substringBefore(":")
               }
 
               buildTypes {
