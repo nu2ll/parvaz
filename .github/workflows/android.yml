@@ -1,4 +1,5 @@
-# Kabootar Android APK. Only this one file is needed: it writes the Android project itself.
+# Kabootar Android APK. This one file builds everything: it writes the Android project,
+# packs the web interface (public/) inside the APK, and builds it.
 # Run: Actions → Android APK → Run workflow. Download: the run → Artifacts → kabootar-apk
 name: Android APK
 on:
@@ -9,7 +10,7 @@ on:
         required: false
         default: "https://kabootar.up.railway.app"
   push:
-    paths: [".github/workflows/android.yml", "android/**"]
+    paths: [".github/workflows/android.yml", "android/**", "public/**"]
 
 jobs:
   build:
@@ -66,8 +67,8 @@ jobs:
                   applicationId = "app.kabootar"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 36
-                  versionName = "3.6.0"
+                  versionCode = 37
+                  versionName = "3.7.0"
                   buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
                   manifestPlaceholders["serverHost"] = serverUrl.substringAfter("://").substringBefore("/").substringBefore(":")
               }
@@ -156,6 +157,7 @@ jobs:
           import android.os.Build
           import android.os.Bundle
           import android.os.Environment
+          import android.view.View
           import android.view.ViewGroup
           import android.webkit.*
           import android.widget.Toast
@@ -163,12 +165,12 @@ jobs:
           import androidx.activity.OnBackPressedCallback
           import androidx.activity.result.contract.ActivityResultContracts
           import androidx.core.content.ContextCompat
+          import java.io.IOException
 
           /**
-           * Kabootar for Android: a full-screen WebView that only talks to your Kabootar server
-           * (BuildConfig.SERVER_URL). Camera / mic for calls, voice & video messages, file picking,
-           * downloads, back button and links to the server open inside the app; everything else
-           * opens in the browser.
+           * Kabootar for Android. The whole interface (HTML, JS, CSS, icons, stickers) is packed inside
+           * the APK (assets/web) and served locally; the app only talks to your server for data:
+           * /api (messages, chats…), /files (photos, voice…) and /ws (live updates).
            */
           class MainActivity : ComponentActivity() {
               private lateinit var web: WebView
@@ -204,6 +206,8 @@ jobs:
                   web = WebView(this)
                   setContentView(web)
                   web.setBackgroundColor(Color.parseColor("#212121"))
+                  web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                  web.overScrollMode = View.OVER_SCROLL_NEVER
 
                   with(web.settings) {
                       javaScriptEnabled = true
@@ -219,10 +223,13 @@ jobs:
                       cacheMode = WebSettings.LOAD_DEFAULT
                       mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                       userAgentString = "$userAgentString KabootarAndroid/${BuildConfig.VERSION_NAME}"
+                      offscreenPreRaster = true
                   }
                   CookieManager.getInstance().setAcceptCookie(true)
 
                   web.webViewClient = object : WebViewClient() {
+                      // the UI comes from the APK; only /api, /files and /ws go to the server
+                      override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = localAsset(request)
                       override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                           val url = request.url
                           if (url.host == server.host && url.scheme == "https") return false // stay in the app
@@ -281,6 +288,31 @@ jobs:
                   else web.loadUrl(startUrl(intent))
               }
 
+              private val mimeTypes = mapOf(
+                  "html" to "text/html", "js" to "text/javascript", "css" to "text/css", "svg" to "image/svg+xml",
+                  "png" to "image/png", "webp" to "image/webp", "jpg" to "image/jpeg", "ico" to "image/x-icon",
+                  "json" to "application/json", "webmanifest" to "application/manifest+json", "woff2" to "font/woff2"
+              )
+              private val textTypes = setOf("html", "js", "css", "svg", "json", "webmanifest")
+
+              private fun localAsset(request: WebResourceRequest): WebResourceResponse? {
+                  val url = request.url
+                  if (url.host != server.host || request.method != "GET") return null
+                  val path = url.path ?: "/"
+                  if (path.startsWith("/api/") || path.startsWith("/files/") || path == "/ws") return null
+                  val rel = if (path == "/" || path.isEmpty()) "index.html" else path.trimStart('/')
+                  if (rel.contains("..")) return null
+                  return try {
+                      val stream = assets.open("web/$rel")
+                      val ext = rel.substringAfterLast('.', "")
+                      WebResourceResponse(
+                          mimeTypes[ext] ?: "application/octet-stream",
+                          if (ext in textTypes) "utf-8" else null,
+                          200, "OK", mapOf("Cache-Control" to "no-cache"), stream
+                      )
+                  } catch (e: IOException) { null }
+              }
+
               private fun startUrl(intent: Intent?): String {
                   val data = intent?.data
                   return if (data != null && data.host == server.host) data.toString() else BuildConfig.SERVER_URL + "/"
@@ -327,39 +359,4 @@ jobs:
           </resources>
           KAB_EOF
           mkdir -p "android/app/src/main/res/mipmap-anydpi-v26"
-          cat > 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml' <<'KAB_EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/icon_bg" />
-              <foreground android:drawable="@drawable/ic_launcher_foreground" />
-          </adaptive-icon>
-          KAB_EOF
-          mkdir -p "android/app/src/main/res/drawable"
-          cat > 'android/app/src/main/res/drawable/ic_launcher_foreground.xml' <<'KAB_EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <!-- a white pigeon (paper-plane wing) on the blue adaptive background -->
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-              <path android:fillColor="#FFFFFF"
-                  android:pathData="M30,56 L76,36 C79,35 81,37 80,40 L70,74 C69,77 66,78 64,76 L53,67 L46,74 C45,75 43,74 43,73 L44,62 L68,44 L40,58 L31,60 C28,60 28,57 30,56 Z" />
-              <path android:fillColor="#D6E9FB" android:pathData="M44,62 L68,44 L53,67 Z" />
-          </vector>
-          KAB_EOF
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: "17" }
-      - uses: gradle/actions/setup-gradle@v3
-        with: { gradle-version: "8.7" }
-      - name: Build APK
-        working-directory: android
-        env:
-          KABOOTAR_URL: ${{ github.event.inputs.server_url }}
-        run: |
-          gradle assembleRelease --no-daemon > build.log 2>&1 || {
-            echo "=========== ERROR ==========="
-            grep -E "^e: |error:|What went wrong" -A8 build.log | head -80
-            exit 1
-          }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kabootar-apk
-          path: android/app/build/outputs/apk/release/*.apk
+       
