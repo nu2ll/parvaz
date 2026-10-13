@@ -353,7 +353,12 @@ jobs:
         working-directory: android
         env:
           KABOOTAR_URL: ${{ github.event.inputs.server_url }}
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: |
+          gradle assembleRelease --no-daemon > build.log 2>&1 || {
+            echo "=========== ERROR ==========="
+            grep -E "^e: |error:|What went wrong" -A8 build.log | head -80
+            exit 1
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: kabootar-apk
