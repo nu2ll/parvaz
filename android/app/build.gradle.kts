@@ -15,8 +15,8 @@ android {
         applicationId = "app.kabootar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 37
-        versionName = "3.7.0"
+        versionCode = 38
+        versionName = "3.8.0"
         buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
         manifestPlaceholders["serverHost"] = serverUrl.substringAfter("://").substringBefore("/").substringBefore(":")
     }

@@ -15,6 +15,7 @@ App.persistToken = async (token) => {
 };
 
 App.renderAuth = (mode = 'login') => {
+  setTimeout(() => App.bootDone(), 0);
   const box = $('#auth');
   box.hidden = false;
   $('#app').hidden = true;
@@ -93,6 +94,8 @@ App.logout = (expired) => {
   if (S.token && !expired) api('POST', '/api/auth/logout').catch(() => {});
   S.token = null;
   save('token', null);
+  App.forgetCache();
+  if (typeof Native !== 'undefined') Native.session('');
   if (typeof Lock !== 'undefined') Lock.forget();
   App.teardown();
   App.renderAuth('login');
@@ -113,23 +116,87 @@ App.teardown = () => {
   document.title = 'کبوتر';
 };
 
+// Telegram-style start: the last chat list is drawn instantly from this device, then
+// "در حال به‌روزرسانی…" in the title while it syncs. First login waits for the network once.
+const cacheTag = () => (S.token ? S.token.slice(-10) : '');
+App.cachedBoot = () => {
+  const me = store('me', null), cache = store('chatsCache', null);
+  return me && cache && cache.tag === cacheTag() && Array.isArray(cache.chats) ? { me, chats: cache.chats } : null;
+};
+let cacheTimer = null;
+App.cacheChats = () => {
+  clearTimeout(cacheTimer);
+  cacheTimer = setTimeout(() => {
+    if (!S.token || !S.me) return;
+    const chats = [...S.chats.values()].sort((a, b) => (b.pinned_at || 0) - (a.pinned_at || 0) || (b.last_message?.id || 0) - (a.last_message?.id || 0)).slice(0, 60);
+    save('me', S.me);
+    save('chatsCache', { tag: cacheTag(), chats });
+  }, 1500);
+};
+App.forgetCache = () => { save('me', null); save('chatsCache', null); };
+App.bootDone = () => {
+  const b = document.getElementById('boot');
+  if (b && !b.classList.contains('out')) { b.classList.add('out'); setTimeout(() => b.remove(), 400); }
+  document.body.classList.add('booted');
+  if (typeof Native !== 'undefined') Native.ready();
+};
 App.start = async () => {
-  if (!S.me) S.me = (await api('GET', '/api/me')).user;
-  api('GET', '/api/config').then((c) => Object.assign(S.config, c)).catch(() => {});
-  try {
-    const { settings } = await api('GET', '/api/me/settings');
+  const cached = !S.me && App.cachedBoot();
+  const settingsP = api('GET', '/api/me/settings').then(({ settings }) => {
     Object.assign(S.settings, settings);
     save('settings', S.settings);
     applyTheme();
-  } catch {}
+    if (el.list) App.renderSidebar();
+    Native.syncPrefs();
+  }).catch(() => {});
+  api('GET', '/api/config').then((c) => Object.assign(S.config, c)).catch(() => {});
+  if (cached) {
+    S.me = cached.me;
+    S.everConnected = true; // the first "ready" resyncs everything, title says "updating"
+    for (const c of cached.chats) S.chats.set(c.id, c);
+  } else {
+    if (!S.me) S.me = (await api('GET', '/api/me')).user;
+    await Promise.race([settingsP, new Promise((r) => setTimeout(r, 2500))]);
+  }
   $('#auth').hidden = true;
   $('#app').hidden = false;
   App.buildShell();
-  await App.loadChats();
+  if (cached) App.renderSidebar();
+  else {
+    App.listSkeleton();
+    await App.loadChats();
+  }
   App.showEmpty();
+  App.bootDone();
+  setTimeout(() => App.prefetch(), 2500);
+  Native.session(S.token);
+  Native.syncPrefs();
   App.connect();
   App.route();
   if (typeof Stories !== 'undefined') Stories.load();
+  const pend = App.pendingOpen || Native.takeLaunchChat();
+  App.pendingOpen = 0;
+  if (pend) window.KabootarOpenChat(pend);
+};
+// Telegram opens chats instantly: the top few are loaded quietly in the background
+App.prefetch = async () => {
+  const top = [...S.chats.values()].filter((c) => !c.is_forum && c.last_message && !(c.unread > 30))
+    .sort((a, b) => (b.unread > 0) - (a.unread > 0) || (b.last_message?.id || 0) - (a.last_message?.id || 0)).slice(0, 6);
+  for (const c of top) {
+    if (!S.token || S.msgs.has(App.mkey(c.id, null)) || S.active === c.id) continue;
+    if (document.hidden) return;
+    try {
+      const r = await api('GET', App.historyUrl(c.id, 'limit=40'));
+      if (!S.msgs.has(App.mkey(c.id, null)) && S.active !== c.id) S.msgs.set(App.mkey(c.id, null), { list: r.messages, hasMore: r.has_more, hasNewer: false });
+    } catch { return; }
+    await new Promise((res) => setTimeout(res, 250));
+  }
+};
+// grey placeholder rows while the very first chat list loads
+App.listSkeleton = () => {
+  if (!el.list || S.chats.size) return;
+  el.list.replaceChildren(...Array.from({ length: 9 }, (_, i) => h('div', { class: 'ci skel', style: `--i:${i}` },
+    h('div', { class: 'sk-av' }), h('div', { class: 'sk-lines' }, h('i', {}), h('i', {})))));
 };
 
 /* =====================================================================
@@ -155,7 +222,7 @@ App.buildShell = () => {
   el.searchRow = h('div', { class: 'search-row' }, h('div', { class: 'search-box' }, icon('oSearch'), el.search,
     h('button', { class: 'clear', type: 'button', title: 'پاک کردن', onclick: () => { el.search.value = ''; App.renderSidebar(); el.search.focus(); } }, icon('close'))));
   el.rootChats = h('div', { class: 'root root-chats' },
-    h('div', { class: 'a-head' }, el.storyStack, el.appTitle, h('div', { class: 'sp' }), el.lockBtn, el.searchIcon, el.menuBtn),
+    h('div', { class: 'a-head chats-head' }, el.storyStack, el.appTitle, h('div', { class: 'sp' }), el.lockBtn, el.searchIcon, el.menuBtn),
     el.storiesBar, el.searchRow, el.listWrap, h('div', { class: 'fabs' }, el.fabCam, el.fabNew));
   el.bottomNav = App.buildNav();
   el.mainTab = h('div', { class: 'stab main in' }, el.rootChats, el.bottomNav);
@@ -273,6 +340,7 @@ App.loadChats = async () => {
   S.chats.clear();
   for (const c of chats) S.chats.set(c.id, c);
   App.renderSidebar();
+  App.cacheChats();
 };
 
 const DEFAULT_FOLDERS = [
@@ -306,6 +374,7 @@ App.sortedChats = (archived) => [...S.chats.values()]
 
 App.renderSidebar = () => {
   if (!el.list) return;
+  App.cacheChats();
   const q = el.search.value.trim();
   App.updateTitle();
   if (App.archiveTab) App.renderArchive();
@@ -776,11 +845,15 @@ App.openChat = async (id, opts = {}) => {
   const key = App.mkey();
   const st = S.msgs.get(key);
   if (!st || opts.jump || st.stale) {
-    el.inner.replaceChildren(h('div', { class: 'loading-more' }, 'در حال بارگذاری…'));
+    const t0 = Date.now();
+    el.inner.replaceChildren(h('div', { class: 'chat-loading' }, h('span', { class: 'spinner' })));
     try {
       if (opts.jump) await App.loadAround(id, opts.jump);
       else await App.loadInitial(id);
     } catch (err) { toast(err.message); return; }
+    // don't build the message list in the middle of the slide-in: that's what made it stutter
+    const left = narrow() ? 300 - (Date.now() - t0) : 0;
+    if (left > 0) await new Promise((r) => setTimeout(r, left));
     if (S.active !== id || S.topic !== topic) return;
   }
   const fresh = S.chats.get(id);
@@ -801,14 +874,22 @@ App.openChat = async (id, opts = {}) => {
   App.onScroll();
   App.markRead();
   if (!narrow() && fresh.can_post) setTimeout(() => el.input?.focus(), 0);
-  if (document.body.classList.contains('info-open') && App.infoChat !== id) App.openInfo(id);
+  // wide screens keep the info column on the new chat; phones never open the profile by themselves
+  if (!narrow() && document.body.classList.contains('info-open') && App.infoChat !== id) App.openInfo(id);
+  else if (narrow() && !$('#info').hidden && App.infoChat !== id) App.closeInfo();
 };
 
 App.closeChat = () => {
-  if (history.state?.chat) history.back();
+  const st = history.state;
+  if (st?.chat && st?.info) { App.closeInfo(); history.go(-2); return; }
+  if (st?.chat) history.back();
   else App.showEmpty();
 };
-window.addEventListener('popstate', () => { if (document.body.classList.contains('chat-open') && narrow()) App.showEmpty(); });
+window.addEventListener('popstate', () => {
+  // back from a profile only closes the profile (Telegram), not the chat behind it
+  if (narrow() && !$('#info').hidden) { App.closeInfo(); if (history.state?.chat || !document.body.classList.contains('chat-open')) return; }
+  if (document.body.classList.contains('chat-open') && narrow() && !history.state?.chat) App.showEmpty();
+});
 
 App.historyUrl = (id, params) => {
   const c = S.chats.get(id);
@@ -1160,6 +1241,7 @@ App.onScroll = async () => {
 
 App.markRead = () => {
   const c = S.chats.get(S.active);
+  if (c && !document.hidden) Native.clearNotifications(c.id);
   const st = S.msgs.get(App.mkey());
   if (!c || !st || document.hidden || st.hasNewer) return;
   const lastMsg = st.list.at(-1);
@@ -1431,7 +1513,7 @@ App.pollLoop = async (p) => {
       try {
         if (!p.sid) {
           const r = await api('POST', '/api/live', {});
-          if (!p.alive) return;
+          if (!p.alive) { api('DELETE', `/api/live/${r.sid}`).catch(() => {}); return; }
           p.sid = r.sid;
           p.ack = 0;
           for (const x of r.events) App.onEvent({ ...x.ev, __poll: true });
@@ -1553,15 +1635,7 @@ App.suggestStickers = () => {
   el.suggest.hidden = false;
 };
 
-App.attachMenu = () => {
-  const c = S.chats.get(S.active);
-  UI.menu([
-    { icon: 'oImage', label: 'عکس یا ویدیو', onClick: () => { el.fileInput.accept = 'image/*,video/*'; el.fileInput.dataset.asFile = '0'; el.fileInput.click(); } },
-    { icon: 'oFile', label: 'فایل', onClick: () => { el.fileInput.accept = ''; el.fileInput.dataset.asFile = '1'; el.fileInput.click(); } },
-    c.type !== 'private' ? { icon: 'oPoll', label: 'نظرسنجی', onClick: () => App.pollDialog(c) } : null,
-  ], { anchor: el.attachBtn, up: true, cls: 'attach-menu', onClose: () => el.attachBtn.classList.remove('open') });
-  el.attachBtn.classList.add('open');
-};
+// App.attachMenu lives in attach.js (Telegram Android attach sheet)
 
 /* ---------- uploads ---------- */
 function mediaMeta(file) {
@@ -1820,9 +1894,20 @@ App.setConn = (state) => {
     if (text && st) { st.replaceChildren(text); st.classList.add('conn-st'); }
     else if (!text && S.active && el.head?.querySelector('.conn-st')) App.renderHeader();
   };
-  if (!state) { paint(null); clearInterval(App.pollTimer); App.pollTimer = null; return; }
+  if (!state) {
+    clearInterval(App.pollTimer); App.pollTimer = null;
+    // Telegram keeps "در حال به‌روزرسانی…" up long enough to be read, then puts the name back
+    const left = App.connShown ? 900 - (Date.now() - App.connShown) : 0;
+    if (left > 0) { App.connTimer = setTimeout(() => { App.connShown = 0; paint(null); }, left); return; }
+    App.connShown = 0;
+    paint(null);
+    return;
+  }
   const text = { offline: 'منتظر شبکه…', connecting: 'در حال اتصال…', updating: 'در حال به‌روزرسانی…' }[state];
-  App.connTimer = setTimeout(() => paint(text), state === 'updating' ? 600 : 1200);
+  const show = () => { if (!App.connShown) App.connShown = Date.now(); paint(text); };
+  // updating shows at once in place of the title; a short connect blip isn't worth a flash
+  if (state === 'updating' || el.appTitle?.classList.contains('busy')) show();
+  else App.connTimer = setTimeout(show, 700);
   // while the socket is down keep the list fresh over plain HTTP, so nothing needs a refresh
   if (state !== 'updating' && !App.pollTimer) App.pollTimer = setInterval(() => {
     if (S.wsReady || !S.token || document.hidden) return;
@@ -1857,9 +1942,10 @@ App.connect = () => {
   if (!S.pollLive) App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
   // a socket that never becomes ready (captive portals, frozen proxies) is retried
   App.openTimer = setTimeout(() => { if (S.ws === ws && !S.wsLive) { App.dropSocket(); App.scheduleReconnect(S.pollLive ? 30000 : 1000); } }, 25000);
-  // if the socket isn't up quickly, switch to HTTP live events right away (VPNs, filtered networks)
+  // no waiting: HTTP live events start together with the socket, whichever is up first carries
+  // the updates and the socket takes over the moment it's ready (VPNs, filtered networks)
   clearTimeout(App.fallbackTimer);
-  App.fallbackTimer = setTimeout(() => { if (!S.wsLive && !S.manualClose) App.startPoll(); }, 6000);
+  App.startPoll();
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: S.token }));
   ws.onmessage = (e) => {
     App.lastRx = Date.now();
@@ -1874,7 +1960,7 @@ App.connect = () => {
     if (S.manualClose || !S.token) return;
     if (e.code === 4001) { api('GET', '/api/me').then(() => App.scheduleReconnect(800)).catch(() => {}); return; }
     S.wsFails = (S.wsFails || 0) + 1;
-    if (S.wsFails >= 2) App.startPoll();
+    App.startPoll(); // keep the updates flowing over HTTP while the socket reconnects
     if (S.pollLive) return App.scheduleReconnect(30000); // HTTP is carrying us; try upgrading now and then
     App.setConn(navigator.onLine === false ? 'offline' : 'connecting');
     App.scheduleReconnect(document.hidden ? Math.min(30000, 1000 * 2 ** S.retry++) : Math.min(5000, 400 * 2 ** S.retry++));
@@ -1906,7 +1992,16 @@ window.addEventListener('online', () => { S.retry = 0; App.ensureConnected(); })
 window.addEventListener('offline', () => App.setConn('offline'));
 window.addEventListener('focus', () => App.ensureConnected());
 window.addEventListener('pageshow', () => App.ensureConnected());
-document.addEventListener('visibilitychange', () => { if (!document.hidden) App.ensureConnected(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  const away = Date.now() - (App.hiddenAt || Date.now());
+  App.ensureConnected();
+  if (away > 60000 && S.wsReady && S.me && !App.syncing) {
+    App.syncing = true;
+    App.setConn('updating');
+    App.loadChats().catch(() => {}).finally(() => { App.syncing = false; if (S.wsReady) App.setConn(null); });
+  }
+});
 setInterval(() => { if (!document.hidden) App.probe(); }, 25000);
 
 App.onEvent = async (ev) => {
@@ -1923,6 +2018,14 @@ App.onEvent = async (ev) => {
       clearTimeout(App.probeTimer); App.probeTimer = null;
       break;
     case 'ready': {
+      // the second transport coming up (socket after HTTP, usually): already in sync, just switch
+      if (S.wsReady && S.everConnected) {
+        if (!ev.__poll) { S.wsLive = true; S.wsFails = 0; S.retry = 0; clearTimeout(App.openTimer); if (S.poll) App.stopPoll(); S.wsReady = true; }
+        else S.pollLive = true;
+        S.me = ev.user;
+        App.lastRx = Date.now();
+        break;
+      }
       if (ev.__poll) S.pollLive = true;
       else { S.wsLive = true; S.wsFails = 0; clearTimeout(App.fallbackTimer); if (S.poll) App.stopPoll(); }
       S.wsReady = true;
@@ -1931,6 +2034,7 @@ App.onEvent = async (ev) => {
       S.me = ev.user;
       App.lastRx = Date.now();
       App.setConn(S.everConnected ? 'updating' : null);
+      App.syncing = !!S.everConnected;
       if (S.everConnected) try {
         // resync everything that may have happened while we were offline
         for (const st of S.msgs.values()) st.stale = true;
@@ -1946,6 +2050,7 @@ App.onEvent = async (ev) => {
         if (typeof Stories !== 'undefined') Stories.load();
         if (App.forumTab) App.loadTopics(App.forumTab.chatId).then(() => App.renderTopics(App.forumTab?.chatId)).catch(() => {});
       } catch (err) { console.error('[resync]', err); }
+      App.syncing = false;
       App.setConn(null);
       S.everConnected = true;
       break;

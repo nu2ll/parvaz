@@ -8,6 +8,35 @@
   <title>کبوتر</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
+  <script>
+    /* theme before the first paint (no white flash), and the app flag for the Android build */
+    (function () {
+      var d = document.documentElement;
+      try {
+        var s = JSON.parse(localStorage.getItem('kb_settings') || '{}'), t = s.theme || 'system';
+        d.dataset.theme = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      } catch (e) {}
+      if (/KabootarAndroid/.test(navigator.userAgent)) d.classList.add('in-app');
+    })();
+  </script>
+  <style>
+    #boot { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px;
+      background: #fff; transition: opacity .28s ease, transform .28s ease; }
+    [data-theme="dark"] #boot { background: #212121; }
+    #boot .bl { width: 96px; height: 96px; border-radius: 50%; background: linear-gradient(135deg, #6cc4ff, #2b8fd6); display: grid; place-items: center;
+      animation: bootIn .55s cubic-bezier(.2, .9, .3, 1.25) both; box-shadow: 0 6px 24px rgba(43, 143, 214, .35); }
+    #boot .bl svg { width: 54px; height: 54px; margin-left: -4px; animation: bootFly 1.6s ease-in-out .5s infinite; }
+    #boot .bd { display: flex; gap: 6px; opacity: 0; animation: bootDots .3s ease .9s forwards; }
+    #boot .bd i { width: 7px; height: 7px; border-radius: 50%; background: #3390ec; animation: bootDot 1s ease-in-out infinite; }
+    [data-theme="dark"] #boot .bd i { background: #8774e1; }
+    #boot .bd i:nth-child(2) { animation-delay: .15s; } #boot .bd i:nth-child(3) { animation-delay: .3s; }
+    #boot.out { opacity: 0; transform: scale(1.04); pointer-events: none; }
+    .in-app #boot { display: none; } /* the app shows its own native splash */
+    @keyframes bootIn { from { transform: scale(.4); opacity: 0; } }
+    @keyframes bootFly { 50% { transform: translate(3px, -3px); } }
+    @keyframes bootDots { to { opacity: 1; } }
+    @keyframes bootDot { 0%, 100% { transform: scale(.6); opacity: .4; } 50% { transform: scale(1); opacity: 1; } }
+  </style>
   <link rel="stylesheet" href="/style.css">
   <script src="/js/core.js" defer></script>
   <script src="/js/sounds.js" defer></script>
@@ -15,17 +44,20 @@
   <script src="/js/render.js" defer></script>
   <script src="/js/wallpaper.js" defer></script>
   <script src="/js/app.js" defer></script>
+  <script src="/js/native.js" defer></script>
   <script src="/js/media.js" defer></script>
   <script src="/js/panels.js" defer></script>
   <script src="/js/recorder.js" defer></script>
   <script src="/js/creator.js" defer></script>
   <script src="/js/android.js" defer></script>
+  <script src="/js/attach.js" defer></script>
   <script src="/js/settings.js" defer></script>
   <script src="/js/stories.js" defer></script>
   <script src="/js/calls.js" defer></script>
   <script src="/js/lock.js" defer></script>
 </head>
 <body>
+  <div id="boot" aria-hidden="true"><div class="bl"><svg viewBox="0 0 64 64"><path d="M14 33l34-14-6 28-11-7-5 6v-9l15-13-19 11z" fill="#fff"/></svg></div><div class="bd"><i></i><i></i><i></i></div></div>
   <div id="auth" class="auth" hidden></div>
   <div id="app" class="app" hidden>
     <aside id="sidebar" class="sidebar"></aside>

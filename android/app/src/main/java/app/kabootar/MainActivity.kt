@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
             textZoom = 100
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            userAgentString = "$userAgentString KabootarAndroid/${BuildConfig.VERSION_NAME}"
+            userAgentString = "$userAgentString KabootarAndroid/${BuildConfig.VERSION_NAME} (${Build.MANUFACTURER.replace(";", "")}; ${Build.MODEL.replace(";", "")}; Android ${Build.VERSION.RELEASE})"
             offscreenPreRaster = true
         }
         CookieManager.getInstance().setAcceptCookie(true)

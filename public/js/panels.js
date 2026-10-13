@@ -231,23 +231,27 @@ App.sendFilesDialog = (files, asFile) => {
     onClose: () => setTimeout(() => urls.forEach((u) => URL.revokeObjectURL(u)), 1000),
   });
   const go = () => {
-    const cap = caption.input.value.trim();
-    const replyTo = S.reply?.id || null;
     m.close();
-    // albums hold up to 10 items, like Telegram
-    const groups = [];
-    for (let i = 0; i < files.length; i += 10) groups.push(files.slice(i, i + 10));
-    for (const chunk of groups) {
-      const gid = group && chunk.length > 1 ? Math.random().toString(36).slice(2, 12) + Date.now().toString(36) : null;
-      chunk.forEach((f, i) => App.upload(f, {
-        caption: groups[0] === chunk && i === 0 ? cap : '', asFile: !compress, replyTo: groups[0] === chunk && i === 0 ? replyTo : null,
-        grouped: gid, spoiler: spoiler && compress,
-      }));
-    }
-    if (replyTo) { S.reply = null; App.renderComposerBar(); }
+    App.sendFilesNow(files, { caption: caption.input.value.trim(), compress, group, spoiler });
   };
   send.addEventListener('click', go);
   caption.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
+};
+
+// albums hold up to 10 items, like Telegram
+App.sendFilesNow = (files, { caption = '', compress = true, group = true, spoiler = false } = {}) => {
+  const cap = caption.trim();
+  const replyTo = S.reply?.id || null;
+  const groups = [];
+  for (let i = 0; i < files.length; i += 10) groups.push(files.slice(i, i + 10));
+  for (const chunk of groups) {
+    const gid = group && chunk.length > 1 ? Math.random().toString(36).slice(2, 12) + Date.now().toString(36) : null;
+    chunk.forEach((f, i) => App.upload(f, {
+      caption: groups[0] === chunk && i === 0 ? cap : '', asFile: !compress, replyTo: groups[0] === chunk && i === 0 ? replyTo : null,
+      grouped: gid, spoiler: spoiler && compress,
+    }));
+  }
+  if (replyTo) { S.reply = null; App.renderComposerBar(); }
 };
 
 /* ---------- polls ---------- */
@@ -419,6 +423,32 @@ App.closeInfo = () => {
   App.infoChat = null;
   document.body.classList.remove('info-open');
 };
+// back from the profile: on phones it's a page with its own history entry (Android back / swipe)
+App.backInfo = () => {
+  if (narrow() && history.state?.info) history.back();
+  else App.closeInfo();
+};
+App.shareChat = (c) => {
+  const url = c.type === 'private' ? `${location.origin}/#/@${c.username}` : c.username ? publicUrl(c.username) : c.invite_token ? inviteUrl(c.invite_token) : null;
+  if (!url) return toast('این گفتگو لینک عمومی ندارد');
+  if (navigator.share) navigator.share({ title: chatTitle(c), url }).catch(() => {});
+  else copyText(url, 'لینک کپی شد');
+};
+// ⋮ on the profile: everything that isn't one of the three big buttons
+App.infoMenu = (c, anchor) => {
+  const priv = c.type === 'private' && !isSaved(c);
+  const p = c.peer;
+  UI.menu([
+    priv && !p.system && !p.blocked ? { icon: 'video', label: 'تماس تصویری', onClick: () => App.startCall(c, true) } : null,
+    priv && !p.system ? { icon: 'oEdit', label: p.is_contact ? 'ویرایش مخاطب' : 'افزودن به مخاطبین', onClick: () => App.contactDialog(p) } : null,
+    c.username || c.invite_token ? { icon: 'oShare', label: 'اشتراک‌گذاری', onClick: () => App.shareChat(c) } : null,
+    c.can_manage ? { icon: 'oEdit', label: 'ویرایش', onClick: () => App.editChatDialog(c) } : null,
+    c.can_manage && !c.invite_token ? { icon: 'link', label: 'ساخت لینک دعوت', onClick: () => App.inviteDialog(c) } : null,
+    S.me.is_admin && !isSaved(c) ? { icon: 'shield', label: c.verified ? 'برداشتن تیک آبی' : 'دادن تیک آبی', onClick: () => App.setVerified(c, !c.verified) } : null,
+    priv && !p.system ? { icon: 'block', label: p.blocked ? 'رفع مسدودی' : 'مسدود کردن', danger: !p.blocked, onClick: () => App.toggleBlock(p) } : null,
+    c.type !== 'private' ? { icon: 'logout', label: c.type === 'channel' ? 'ترک کانال' : 'ترک گروه', danger: true, onClick: () => App.leaveOrDelete(c) } : null,
+  ], { anchor });
+};
 App.toggleInfo = () => {
   if (!$('#info').hidden && App.infoChat === S.active) return App.closeInfo();
   App.openInfo(S.active);
@@ -430,6 +460,7 @@ App.openInfo = async (chatId, refresh) => {
   const info = $('#info');
   const tab = refresh ? info.dataset.tab : null;
   if (!refresh) App.infoSide.popAll();
+  if (!refresh && narrow() && info.hidden && !history.state?.info) history.pushState({ ...(history.state || {}), info: chatId }, '');
   info.hidden = false;
   document.body.classList.add('info-open');
   App.infoChat = chatId;
@@ -439,21 +470,22 @@ App.openInfo = async (chatId, refresh) => {
   if (App.infoChat !== chatId || info.hidden) return;
   const priv = c.type === 'private' && !isSaved(c);
   const st = R.chatStatus(c);
-  const rows = h('div', { class: 'info-rows' });
-  if (c.username) rows.append(UI.row(c.type === 'private' ? 'at' : 'link', c.type === 'private' ? '@' + c.username : publicUrl(c.username), c.type === 'private' ? 'نام کاربری' : 'لینک', () => copyText(c.type === 'private' ? '@' + c.username : publicUrl(c.username))));
-  if (c.description) rows.append(UI.row('info', c.description, c.type === 'private' ? 'بیوگرافی' : 'توضیحات', () => copyText(c.description), 'multi'));
-  if (c.can_manage && c.invite_token) rows.append(UI.row('link', inviteUrl(c.invite_token), 'لینک دعوت', () => copyText(inviteUrl(c.invite_token), 'لینک کپی شد')));
-  if (!isSaved(c)) rows.append(UI.switchRow('bell', 'اعلان‌ها', c.muted ? 'خاموش' : 'روشن', !c.muted, (v) => App.chatSetting(c, { muted: !v })));
-  if (S.me.is_admin && !isSaved(c)) rows.append(UI.row('shield', c.verified ? 'برداشتن تیک آبی' : 'دادن تیک آبی', 'فقط ادمین‌های کبوتر', () => App.setVerified(c, !c.verified)));
-  if (priv && !c.peer.system) {
-    rows.append(UI.row('personAdd', c.peer.is_contact ? 'ویرایش مخاطب' : 'افزودن به مخاطبین', null, () => App.contactDialog(c.peer)));
-    rows.append(UI.row('block', c.peer.blocked ? 'رفع مسدودی' : 'مسدود کردن کاربر', null, () => App.toggleBlock(c.peer), c.peer.blocked ? '' : 'danger'));
+  // Telegram Android profile: value on top, small label under it, no icons
+  const rows = h('div', { class: 'info-rows p-card' });
+  const vrow = (value, label, onClick, cls, end) => UI.row(null, value, label, onClick, 'p-val' + (cls ? ' ' + cls : ''), end);
+  if (c.description) rows.append(vrow(c.description, c.type === 'private' ? 'بیوگرافی' : 'توضیحات', () => copyText(c.description), 'multi'));
+  if (c.username) {
+    const link = c.type === 'private' ? '@' + c.username : publicUrl(c.username).replace(/^https?:\/\//, '');
+    rows.append(vrow(link, c.type === 'private' ? 'نام کاربری' : 'لینک', () => copyText(c.type === 'private' ? '@' + c.username : publicUrl(c.username)), 'ltr-n',
+      ibtn('link', 'اشتراک‌گذاری', (e) => { e.stopPropagation(); App.shareChat(c); })));
   }
-  if (c.can_manage) {
-    rows.append(UI.row('personAdd', c.type === 'channel' ? 'افزودن مشترک' : 'افزودن عضو', null, () => App.addMembersDialog(c)));
-    if (!c.invite_token) rows.append(UI.row('link', 'ساخت لینک دعوت', null, () => App.inviteDialog(c)));
-  }
-  if (c.type !== 'private') rows.append(UI.row('logout', c.type === 'channel' ? 'ترک کانال' : 'ترک گروه', null, () => App.leaveOrDelete(c), 'danger'));
+  if (c.can_manage && c.invite_token && !c.username) rows.append(vrow(inviteUrl(c.invite_token).replace(/^https?:\/\//, ''), 'لینک دعوت', () => copyText(inviteUrl(c.invite_token), 'لینک کپی شد'), 'ltr-n'));
+  if (priv && c.peer.system) rows.append(vrow('حساب رسمی کبوتر', 'سرویس', null));
+  if (!rows.children.length) rows.hidden = true;
+  const extra = h('div', { class: 'info-rows p-card p-links' });
+  if (priv && !c.peer.system && !c.peer.is_contact) extra.append(UI.row('personAdd', 'افزودن به مخاطبین', null, () => App.contactDialog(c.peer), 'accent'));
+  if (c.can_manage) extra.append(UI.row('personAdd', c.type === 'channel' ? 'افزودن مشترک' : 'افزودن عضو', null, () => App.addMembersDialog(c), 'accent'));
+  if (!extra.children.length) extra.hidden = true;
 
   const tabs = [];
   if (details.members.length) tabs.push(['members', c.type === 'channel' ? 'مشترک‌ها' : 'اعضا']);
@@ -502,25 +534,41 @@ App.openInfo = async (chatId, refresh) => {
   };
   const tabBar = UI.tabs(tabs, tabs[0][0], showTab, 'info-tabs');
 
-  // Web K: full-width square photo with the name on top of it; otherwise a round avatar
-  let top;
+  // Telegram Android: round photo in the middle, name, status, then three action cards
   const name = h('div', { class: 't', dir: 'auto' }, chatTitle(c), c.verified ? R.verified() : null);
   const status = st.text ? h('div', { class: 'st' + (st.accent ? ' accent' : '') }, st.text) : null;
-  if (c.avatar && !isSaved(c)) {
-    top = h('div', { class: 'info-photo', onclick: () => {
-      if (priv && c.peer.stories) return App.openStoriesOf(c.peer.id);
-      UI.lightbox({ kind: 'photo', media: { url: c.avatar, name: 'avatar.jpg' }, sender: c.peer || { display_name: c.title, id: c.id }, created_at: Date.now(), id: 0 }, null);
-    } }, h('img', { src: c.avatar, alt: '' }), h('div', { class: 'ip-over' }, name, status));
-  } else {
-    const big = chatAvatar(c, 's120');
-    if (priv && c.peer.stories) big.addEventListener('click', () => App.openStoriesOf(c.peer.id));
-    top = h('div', { class: 'info-top' }, big, name, status);
-  }
+  const big = chatAvatar(c, 's110');
+  big.addEventListener('click', () => {
+    if (priv && c.peer.stories) return App.openStoriesOf(c.peer.id);
+    if (c.avatar && !isSaved(c)) UI.lightbox({ kind: 'photo', media: { url: c.avatar, name: 'avatar.jpg' }, sender: c.peer || { display_name: c.title, id: c.id }, created_at: Date.now(), id: 0 }, null);
+  });
+  const top = h('div', { class: 'info-top p-top' }, big, name, status);
+  const act = (ic, label, fn, cls) => h('button', { type: 'button', class: 'p-action' + (cls ? ' ' + cls : ''), onclick: fn }, icon(ic), h('span', {}, label));
+  const muteAct = () => act(c.muted ? 'oBellOff' : 'oBell', c.muted ? 'صدادار کردن' : 'بی‌صدا کردن', () => App.chatSetting(c, { muted: !c.muted }));
+  const goChat = () => { App.backInfo(); if (S.active !== c.id) App.openChat(c.id); };
+  let acts = [];
+  if (isSaved(c)) acts = [act('oSearch', 'جستجو', () => { App.backInfo(); App.openChatSearch(); })];
+  else if (priv) acts = [
+    !c.peer.system && !c.peer.blocked ? act('oPhone', 'تماس', () => App.startCall(c, false)) : null,
+    c.peer.system ? null : muteAct(),
+    act('oChat', 'پیام', goChat),
+  ];
+  else if (c.type === 'channel') acts = [
+    c.can_manage ? act('oEdit', 'ویرایش', () => App.editChatDialog(c)) : act('oLeave', 'ترک کردن', () => App.leaveOrDelete(c)),
+    act('oShare', 'به اشتراک گذاری', () => App.shareChat(c)),
+    muteAct(),
+  ];
+  else acts = [
+    c.can_manage ? act('oEdit', 'ویرایش', () => App.editChatDialog(c)) : act('oLeave', 'ترک کردن', () => App.leaveOrDelete(c)),
+    muteAct(),
+    act('oChat', 'پیام', goChat),
+  ];
+  acts = acts.filter(Boolean);
+  const actions = acts.length ? h('div', { class: 'p-actions n' + acts.length }, acts) : null;
+  const more = ibtn('more', 'بیشتر', (e) => App.infoMenu(c, e.currentTarget));
   el.infoBase.replaceChildren(
-    h('div', { class: 'stab-head' }, ibtn('close', 'بستن', App.closeInfo),
-      h('h2', {}, c.type === 'private' ? (isSaved(c) ? 'پیام‌های ذخیره‌شده' : 'اطلاعات کاربر') : c.type === 'channel' ? 'اطلاعات کانال' : 'اطلاعات گروه'),
-      h('div', { class: 'actions' }, c.can_manage ? ibtn('edit', 'ویرایش', () => App.editChatDialog(c)) : priv ? ibtn('edit', 'ویرایش مخاطب', () => App.contactDialog(c.peer)) : null)),
-    h('div', { class: 'stab-body info-body' }, top, rows, h('div', { class: 'info-media' }, tabBar, content)));
+    h('div', { class: 'stab-head p-head' }, ibtn('back', 'بازگشت', App.backInfo), h('div', { class: 'sp' }), isSaved(c) ? null : more),
+    h('div', { class: 'stab-body info-body p-body' }, top, actions, rows, extra, h('div', { class: 'info-media' }, tabBar, content)));
   showTab(tab && tabs.some((t) => t[0] === tab) ? tab : tabs[0][0]);
 };
 

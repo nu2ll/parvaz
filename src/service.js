@@ -145,6 +145,13 @@ function formatMessage(r, viewerId) {
     out.media = null;
   }
   if (r.kind === 'call') { out.call = parseMeta(r.meta); out.media = null; }
+  if (r.kind === 'location') { const m = parseMeta(r.meta); out.location = { lat: m.lat, lng: m.lng, accuracy: m.accuracy ?? null, title: m.title || null }; out.media = null; }
+  if (r.kind === 'contact') {
+    const m = parseMeta(r.meta);
+    const u = m.user_id ? repo.userById(m.user_id) : null;
+    out.contact = { user_id: m.user_id, name: u ? u.display_name : m.name, username: u ? u.username : m.username, avatar: u ? fileUrl(u.avatar_file) : null };
+    out.media = null;
+  }
   if (r.kind !== 'text' && r.meta && parseMeta(r.meta).silent) out.silent = true;
   if (r.kind === 'text' && r.meta) {
     const m = parseMeta(r.meta);
@@ -261,6 +268,15 @@ function emitMessage(type, messageId) {
   if (!row) return;
   for (const uid of repo.memberIds(row.chat_id)) {
     if (hub.isOnline(uid)) hub.sendToUser(uid, { type, message: formatMessage(row, uid) });
+  }
+  // phone notifications (Android app background service)
+  if (type === 'message') {
+    try {
+      require('./push').onMessage(row, (chatId, uid) => {
+        const chat = repo.chatById(chatId);
+        return chat ? buildChat(chat, uid) : null;
+      });
+    } catch (e) { console.error('push', e); }
   }
 }
 
@@ -472,10 +488,13 @@ function updateSettings(user, body) {
 }
 
 function listSessions(user) {
-  return repo.sessionsForUser(user.id).map((s) => ({
-    id: s.id, device: s.device, ip: s.ip, created_at: s.created_at, last_active: s.last_active,
-    current: s.token_hash === user.token_hash,
-  }));
+  return repo.sessionsForUser(user.id).map((s) => {
+    const info = s.ua ? auth.sessionInfo(s.ua) : { model: s.device || 'Unknown device', app: 'Kabootar', platform: /Android/.test(s.device) ? 'android' : 'web', os: '' };
+    return {
+      id: s.id, device: s.device, model: info.model, app: info.app, platform: info.platform, os: info.os,
+      ip: s.ip, created_at: s.created_at, last_active: s.last_active, current: s.token_hash === user.token_hash,
+    };
+  });
 }
 
 function killSession(tokenHash) {
@@ -903,6 +922,18 @@ function sendMessage(user, body) {
     if (chat.type === 'private') throw v.bad('Polls are available in groups and channels');
     const poll = v.poll(body.poll);
     Object.assign(msg, { kind: 'poll', text: poll.question, poll: JSON.stringify(poll) });
+  } else if (body.location && typeof body.location === 'object') {
+    const lat = Number(body.location.lat), lng = Number(body.location.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw v.bad('Invalid location');
+    const loc = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+    const acc = Number(body.location.accuracy);
+    if (Number.isFinite(acc) && acc > 0) loc.accuracy = Math.min(Math.round(acc), 100000);
+    if (typeof body.location.title === 'string' && body.location.title.trim()) loc.title = body.location.title.trim().slice(0, 120);
+    Object.assign(msg, { kind: 'location', text: '', meta: JSON.stringify(loc) });
+  } else if (body.contact_user_id != null) {
+    const u = repo.userById(v.id(body.contact_user_id, 'contact_user_id'));
+    if (!u) throw err(404, 'user_not_found', 'User not found');
+    Object.assign(msg, { kind: 'contact', text: '', meta: JSON.stringify({ user_id: u.id, name: u.display_name, username: u.username }) });
   } else if (body.file_id) {
     const f = repo.fileById(v.fileId(body.file_id));
     // your own uploads, or (for GIFs) anything you can already see, e.g. a saved GIF
@@ -1058,6 +1089,7 @@ function markRead(user, chatIdRaw, messageIdRaw, topicRaw) {
   const messageId = v.id(messageIdRaw, 'message_id');
   const { chat, membership } = requireMember(chatId, user.id);
   const target = Math.min(messageId, repo.maxMessageId(chatId));
+  require('./push').onRead(user.id, chatId, target); // clears the phone notification
   if (chat.is_forum) {
     let topicId = topicRaw != null && topicRaw !== '' ? (String(topicRaw) === '0' ? 0 : v.id(topicRaw, 'topic_id')) : null;
     if (topicId == null) topicId = repo.rawMessage(target)?.topic_id ?? 0;

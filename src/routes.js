@@ -156,6 +156,9 @@ route('POST', '/api/stories/:id/view', (ctx) => stories.view(ctx.user, ctx.param
 route('POST', '/api/stories/:id/react', async (ctx) => stories.react(ctx.user, ctx.params.id, (await body(ctx)).emoji ?? null));
 route('GET', '/api/stories/:id/views', (ctx) => stories.views(ctx.user, ctx.params.id));
 
+// ---- phone notifications (Android app background service; no presence) ----
+route('GET', '/api/push', (ctx) => require('./push').poll(ctx.user, qp(ctx, 'since')));
+
 // ---- live events over HTTP (fallback when WebSockets are blocked) ----
 const live = require('./live');
 route('POST', '/api/live', (ctx) => { rateLimit(`live:${ctx.user.id}`, 30, 60_000); return live.open(ctx.user, ctx.ip); });

@@ -85,7 +85,7 @@ R.isBigEmoji = (t) => {
 
 /* ---------- labels ---------- */
 const KIND_LABEL = { photo: '🖼 عکس', video: '🎬 ویدیو', voice: '🎤 پیام صوتی', audio: '🎵 فایل صوتی', file: '📎 فایل', poll: '📊 نظرسنجی',
-  sticker: 'استیکر', gif: 'GIF', video_note: '📹 پیام ویدیویی', call: '📞 تماس' };
+  sticker: 'استیکر', gif: 'GIF', video_note: '📹 پیام ویدیویی', call: '📞 تماس', location: '📍 موقعیت مکانی', contact: '👤 مخاطب' };
 R.callLabel = (m) => {
   const c = m.call || {};
   const out = m.sender.id === S.me?.id;
@@ -101,6 +101,7 @@ R.kindLabel = (m) => {
   if (m.kind === 'poll') return '📊 ' + (m.poll?.question || m.text);
   if (m.kind === 'sticker') return (m.sticker?.emoji || '') + ' استیکر';
   if (m.kind === 'call') return '📞 ' + R.callLabel(m);
+  if (m.kind === 'contact' && m.contact) return '👤 ' + (m.contact.name || 'مخاطب');
   if (m.media?.spoiler && (m.kind === 'photo' || m.kind === 'video')) return KIND_LABEL[m.kind] + ' (اسپویلر)';
   return KIND_LABEL[m.kind] || '';
 };
@@ -362,6 +363,8 @@ R.media = (c, m) => {
     return h('div', { class: 'sticker-box', title: m.sticker?.emoji || '', onclick: (e) => { e.stopPropagation(); if (S.select) return App.toggleSelect(m); App.stickerPackOf(m); } }, img);
   }
   if (m.kind === 'call') return R.callCard(c, m);
+  if (m.kind === 'location' && m.location) return R.locationCard(m);
+  if (m.kind === 'contact' && m.contact) return R.contactCard(m);
   if (!m.media) return null;
   if (m.kind === 'photo' || m.kind === 'video' || m.kind === 'gif') {
     const [w, ht] = boxSize(m.media, maxMediaW());
@@ -591,4 +594,40 @@ R.message = (c, m, flags = {}) => {
     el.addEventListener('dblclick', (e) => { if (S.select || (typeof touchUI === 'function' && touchUI())) return; if (!e.target.closest('a, button, video, .photo') && c.can_post) { getSelection()?.removeAllRanges(); App.startReply(m); } });
   }
   return el;
+};
+
+/* ---------- location + contact messages ---------- */
+// OpenStreetMap tiles: 2×2 around the point so it always sits in the middle of the box
+R.mapTiles = (lat, lng, W, H, z = 15) => {
+  const n = 2 ** z;
+  const x = ((lng + 180) / 360) * n;
+  const r = (lat * Math.PI) / 180;
+  const y = ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n;
+  const tx = Math.floor(x) - (x % 1 < 0.5 ? 1 : 0), ty = Math.floor(y) - (y % 1 < 0.5 ? 1 : 0);
+  const px = (x - tx) * 256, py = (y - ty) * 256;
+  const tiles = h('div', { class: 'map-tiles', style: `left:${Math.round(W / 2 - px)}px;top:${Math.round(H / 2 - py)}px` });
+  for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+    const X = (((tx + i) % n) + n) % n, Y = ty + j;
+    tiles.append(h('img', { src: `https://tile.openstreetmap.org/${z}/${X}/${Y}.png`, alt: '', loading: 'lazy', decoding: 'async', draggable: 'false', style: `left:${i * 256}px;top:${j * 256}px`, referrerpolicy: 'no-referrer' }));
+  }
+  return h('div', { class: 'map-box', style: `width:${W}px;height:${H}px` }, tiles, h('span', { class: 'map-pin' }, icon('place')));
+};
+R.locationCard = (m) => {
+  const { lat, lng } = m.location;
+  const W = Math.min(300, maxMediaW()), H = 160;
+  const open = (e) => {
+    e.stopPropagation();
+    if (S.select) return App.toggleSelect(m);
+    const url = typeof Native !== 'undefined' && Native.ok ? `geo:${lat},${lng}?q=${lat},${lng}` : `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    window.open(url, '_blank', 'noopener');
+  };
+  return h('div', { class: 'loc-card', onclick: open, role: 'button', title: 'باز کردن در نقشه' }, R.mapTiles(lat, lng, W, H),
+    m.location.title ? h('div', { class: 'loc-title' }, m.location.title) : null);
+};
+R.contactCard = (m) => {
+  const u = { id: m.contact.user_id, display_name: m.contact.name || 'مخاطب', username: m.contact.username || '', avatar: m.contact.avatar };
+  const mine = S.me && u.id === S.me.id;
+  return h('div', { class: 'contact-card' },
+    h('div', { class: 'cc-top' }, userAvatar(u), h('div', { class: 'cc-tx' }, h('b', {}, u.display_name), u.username ? h('small', {}, '@' + u.username) : null)),
+    mine || !u.username ? null : h('button', { class: 'cc-btn', type: 'button', onclick: (e) => { e.stopPropagation(); if (S.select) return App.toggleSelect(m); App.openPrivateWith(u.username); } }, 'ارسال پیام'));
 };

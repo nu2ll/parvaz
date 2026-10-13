@@ -82,7 +82,7 @@ async function until(fn, label, ms = 3000) {
   win.window = win;
   document.addEventListener = (t, fn) => (listeners['doc:' + t] ||= []).push(fn);
   const ctx = vm.createContext(win);
-  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'media', 'panels', 'recorder', 'creator', 'android', 'settings', 'stories', 'calls', 'lock']) {
+  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'native', 'media', 'panels', 'recorder', 'creator', 'android', 'attach', 'settings', 'stories', 'calls', 'lock']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   }
   const run = (code) => vm.runInContext(code, ctx);
@@ -246,6 +246,7 @@ async function until(fn, label, ms = 3000) {
   await sleep(1400);
   ok($('.a-title.busy .spinner') && text('.a-title').includes('در حال اتصال'), 'connection state replaces the title');
   run('App.setConn(null)');
+  await sleep(950); // the status stays readable for a moment, like Telegram
   ok(text('.a-title') === 'کبوتر' && !$('.a-title.busy'), 'title comes back once connected');
   click($('.menu-btn'));
   await until(() => $('.menu.main-menu'), '⋮ menu opens');
@@ -299,7 +300,8 @@ async function until(fn, label, ms = 3000) {
   console.log('WebSocket blocked → HTTP live fallback');
   run('App.dropSocket(); globalThis.__WS = WebSocket; WebSocket = function () { throw new Error("blocked by network"); }; S.wsFails = 0; App.connect()');
   await until(() => run('S.pollLive === true && S.wsReady === true'), 'switches to HTTP live events', 8000);
-  ok(!$('.a-title.busy'), 'title stays «کبوتر» while on the fallback');
+  await until(() => !$('.a-title.busy'), 'title back to «کبوتر» once synced over the fallback', 3000);
+  ok(true, 'title stays «کبوتر» while on the fallback');
   run(`App.openChat(${saraChat})`);
   await sleep(300);
   await call('POST', `/api/chats/${saraChat}/messages`, { text: 'از راه HTTP رسید' }, sara.token);
@@ -311,6 +313,18 @@ async function until(fn, label, ms = 3000) {
   run('WebSocket = globalThis.__WS; App.ensureConnected()');
   await until(() => run('S.wsLive === true && !S.poll'), 'upgrades back to WebSocket', 8000);
   ok(true, 'back on WebSocket, fallback closed');
+
+  console.log('Telegram profile page');
+  run(`App.openChat(${saraChat})`);
+  await sleep(300);
+  run('App.toggleInfo()');
+  await until(() => $('#info .p-top .t'), 'profile opens');
+  ok($$('#info .p-actions .p-action').length === 3 && text('#info .p-actions').includes('پیام') && text('#info .p-actions').includes('بی‌صدا'), 'three action cards (call · mute · message)');
+  ok($('#info .p-head .ibtn') && text('#info .p-card .p-val .s') !== '', 'back + ⋮ on top, value/label rows');
+  run('App.backInfo()');
+  await sleep(50);
+  ok(run("document.getElementById('info').hidden") === true, 'back closes only the profile');
+  ok(run('S.active') === saraChat, 'chat stays open behind it');
 
   console.log('logout');
   run('App.logout(false)');

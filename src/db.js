@@ -269,6 +269,7 @@ ensureColumn('users', 'is_system', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'official_joined', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chats', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chats', 'is_official', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('sessions', 'ua', "TEXT NOT NULL DEFAULT ''");
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(chat_id, topic_id, id);
 PRAGMA user_version = ${SCHEMA_VERSION};
@@ -306,12 +307,13 @@ const s = {
     ORDER BY (username LIKE ? ESCAPE '\\') DESC, username LIMIT 20`),
   touchUser: p('UPDATE users SET last_seen = ? WHERE id = ?'),
 
-  insertSession: p(`INSERT INTO sessions (token_hash, user_id, device, ip, created_at, last_active, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`),
-  sessionUser: p(`SELECT s.id AS session_id, s.last_active, ${USER_COLS.split(', ').map((c) => 'u.' + c).join(', ')}
+  insertSession: p(`INSERT INTO sessions (token_hash, user_id, device, ip, created_at, last_active, expires_at, ua)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+  setSessionUa: p('UPDATE sessions SET ua = ?, device = ? WHERE id = ?'),
+  sessionUser: p(`SELECT s.id AS session_id, s.last_active, s.ua AS session_ua, ${USER_COLS.split(', ').map((c) => 'u.' + c).join(', ')}
     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?`),
   touchSession: p('UPDATE sessions SET last_active = ?, ip = ? WHERE id = ?'),
-  sessionsForUser: p('SELECT id, token_hash, device, ip, created_at, last_active FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY last_active DESC'),
+  sessionsForUser: p('SELECT id, token_hash, device, ip, created_at, last_active, ua FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY last_active DESC'),
   deleteSession: p('DELETE FROM sessions WHERE token_hash = ?'),
   deleteExpiredSessions: p('DELETE FROM sessions WHERE expires_at <= ?'),
 
@@ -423,7 +425,8 @@ module.exports = {
   },
   touchUser: (id, now = Date.now()) => s.touchUser.run(now, id),
 
-  insertSession: (hash, userId, device, ip, now, exp) => Number(s.insertSession.run(hash, userId, device, ip, now, now, exp).lastInsertRowid),
+  insertSession: (hash, userId, device, ip, now, exp, ua = '') => Number(s.insertSession.run(hash, userId, device, ip, now, now, exp, ua).lastInsertRowid),
+  setSessionUa: (id, ua, device) => s.setSessionUa.run(ua, device, id),
   sessionUser: (hash, now) => s.sessionUser.get(hash, now),
   touchSession: (id, ip, now = Date.now()) => s.touchSession.run(now, ip, id),
   sessionsForUser: (uid) => s.sessionsForUser.all(uid, Date.now()),

@@ -56,6 +56,7 @@ const Lock = {
     this.showLockScreen();
   },
   showLockScreen() {
+    setTimeout(() => App.bootDone?.(), 0);
     const box = $('#auth');
     box.hidden = false;
     $('#app').hidden = true;

@@ -223,6 +223,44 @@ const upload = async (token, data, type, name) => (await call('POST', '/api/file
   ok((await wa.waitFor((e) => e.type === 'error' && e.ref === 3)).code === 'privacy_restricted', 'calls privacy respected');
   wa.ws.close(); wb.ws.close();
 
+  console.log('phone notifications, location, contact');
+  let pr = await call('GET', '/api/push', null, B.token);
+  ok(pr.status === 200 && Array.isArray(pr.data.items), 'push poll registers the phone');
+  const cursor = pr.data.seq;
+  const waiting = call('GET', '/api/push?since=' + cursor, null, B.token);
+  await new Promise((r) => setTimeout(r, 50));
+  await call('POST', `/api/chats/${pc.id}/messages`, { text: 'نوتیف تست' }, A.token);
+  pr = await waiting;
+  const note = pr.data.items.find((i) => i.type === 'message');
+  ok(note && note.text === 'نوتیف تست' && note.chat_id === pc.id && note.sender_id === A.user.id && note.chat_title, 'push long-poll wakes up with the new message');
+  r = await call('POST', `/api/chats/${pc.id}/messages`, { location: { lat: 35.6997, lng: 51.3380, accuracy: 12 } }, A.token);
+  ok(r.status === 201 && r.data.message.kind === 'location' && r.data.message.location.lat === 35.6997, 'location message');
+  ok((await call('POST', `/api/chats/${pc.id}/messages`, { location: { lat: 200, lng: 0 } }, A.token)).status === 400, 'bad location rejected');
+  r = await call('POST', `/api/chats/${pc.id}/messages`, { contact_user_id: B.user.id }, A.token);
+  ok(r.data.message.kind === 'contact' && r.data.message.contact.username === B.user.username, 'contact message');
+  pr = await call('GET', '/api/push?since=' + cursor, null, B.token);
+  ok(pr.data.items.some((i) => i.text === '📍 موقعیت مکانی') && pr.data.items.some((i) => i.text === '👤 مخاطب'), 'push previews for location and contact');
+  await call('POST', `/api/chats/${pc.id}/read`, { message_id: r.data.message.id }, B.token);
+  pr = await call('GET', '/api/push?since=' + pr.data.seq, null, B.token);
+  ok(pr.data.items.some((i) => i.type === 'read' && i.chat_id === pc.id), 'reading clears the phone notification');
+  await call('PATCH', `/api/chats/${pc.id}/settings`, { muted: true }, B.token);
+  const before = pr.data.seq;
+  await call('POST', `/api/chats/${pc.id}/messages`, { text: 'بی‌صدا' }, A.token);
+  pr = await call('GET', '/api/push?since=' + before + '&_=' + 1, null, B.token).catch(() => null);
+  ok(!pr || !pr.data.items.some((i) => i.text === 'بی‌صدا'), 'muted chats do not notify');
+  await call('PATCH', `/api/chats/${pc.id}/settings`, { muted: false }, B.token);
+  ok((await call('GET', '/api/push?since=99999', null, B.token)).data.items.length === 0, 'stale cursor resets');
+
+  console.log('devices like Telegram');
+  const APP_UA = 'Mozilla/5.0 (Linux; Android 13; wv) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36 KabootarAndroid/3.8.0 (Xiaomi; Redmi Note 10; Android 13)';
+  const lr = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': APP_UA }, body: JSON.stringify({ username: 'bahar', password: 'supersecret1' }) }).then((x) => x.json());
+  const ss = await fetch(base + '/api/sessions', { headers: { Authorization: 'Bearer ' + lr.token, 'User-Agent': APP_UA } }).then((x) => x.json());
+  const me = ss.sessions.find((x) => x.current);
+  ok(me.model === 'Xiaomi Redmi Note 10' && me.app === 'Kabootar Android 3.8.0' && me.platform === 'android', 'app session shows phone model + app version');
+  const NEW_UA = APP_UA.replace('3.8.0', '3.9.0');
+  const ss2 = await fetch(base + '/api/sessions', { headers: { Authorization: 'Bearer ' + lr.token, 'User-Agent': NEW_UA } }).then((x) => x.json());
+  ok(ss2.sessions.find((x) => x.current).app === 'Kabootar Android 3.9.0', 'device name follows app updates');
+
   console.log(`\nall ${passed} feature checks passed ✅`);
   server.close();
   process.exit(0);

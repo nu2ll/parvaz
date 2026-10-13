@@ -376,30 +376,52 @@ const SETTINGS_PAGES = {
     setTimeout(() => p1.input.focus(), 60);
   },
 
-  /* ---------- sessions ---------- */
+  /* ---------- sessions (Telegram Android "Devices") ---------- */
   async sessions() {
-    const body = h('div');
+    const body = h('div', { class: 'devices' });
     const tab = push('دستگاه‌ها', body);
+    const PLAT = { android: ['pAndroid', '#5fbe67'], ios: ['pApple', '#8a94a3'], mac: ['pApple', '#8a94a3'], windows: ['pWindows', '#3d9cf5'], linux: ['devices', '#f5a524'], web: ['globe', '#4fa9f1'], api: ['bot', '#8e6cf1'] };
+    const devIcon = (s, big) => { const [ic, bg] = PLAT[s.platform] || PLAT.web; return h('span', { class: 'dev-ic' + (big ? ' big' : ''), style: { background: bg } }, icon(ic)); };
+    const when = (s) => (s.current ? 'آنلاین' : Date.now() - s.last_active < 120000 ? 'آنلاین' : fmtListTime(s.last_active));
+    const reload = async () => paint((await api('GET', '/api/sessions')).sessions);
+    const kill = async (s) => {
+      if (!(await UI.ask('خاتمه‌ی نشست', `از «${s.model || s.device}» خارج شوید؟`, 'خاتمه', true))) return false;
+      try { await api('DELETE', `/api/sessions/${s.id}`); toast('نشست خاتمه یافت'); await reload(); return true; } catch (e) { toast(e.message); return false; }
+    };
+    const details = (s) => {
+      const rows = h('div', { class: 'dev-rows' },
+        h('div', { class: 'dr' }, h('span', {}, 'برنامه'), h('b', { dir: 'ltr' }, s.app || 'Kabootar')),
+        s.os ? h('div', { class: 'dr' }, h('span', {}, 'سیستم‌عامل'), h('b', { dir: 'ltr' }, s.os)) : null,
+        h('div', { class: 'dr' }, h('span', {}, 'آی‌پی'), h('b', { dir: 'ltr' }, s.ip || '—')),
+        h('div', { class: 'dr' }, h('span', {}, 'ورود'), h('b', {}, `${fmtDay(s.created_at)} ${fmtTime(s.created_at)}`)),
+        h('div', { class: 'dr' }, h('span', {}, 'آخرین فعالیت'), h('b', {}, s.current ? 'آنلاین' : `${fmtDay(s.last_active)} ${fmtTime(s.last_active)}`)));
+      const m = UI.modal({
+        noHead: true, cls: 'dev-sheet',
+        body: [h('div', { class: 'dev-top' }, devIcon(s, true), h('div', { class: 't', dir: 'ltr' }, s.model || s.device), h('div', { class: 'st' }, when(s))), rows],
+        foot: s.current ? [h('button', { class: 'btn flat', onclick: () => m.close() }, 'بستن')]
+          : [h('button', { class: 'btn flat', onclick: () => m.close() }, 'انصراف'), h('button', { class: 'btn flat danger', onclick: async () => { if (await kill(s)) m.close(); } }, 'خاتمه‌ی نشست')],
+      });
+    };
+    const row = (s) => h('div', { class: 'dev-row', onclick: () => details(s) }, devIcon(s),
+      h('div', { class: 'body' },
+        h('div', { class: 'n', dir: 'ltr' }, s.model || s.device),
+        h('div', { class: 's', dir: 'ltr' }, s.app || ''),
+        h('div', { class: 's' }, h('span', { dir: 'ltr' }, s.ip || '—'), ' · ', h('span', { class: when(s) === 'آنلاین' ? 'on' : '' }, when(s)))));
     const paint = (items) => {
       const cur = items.find((s) => s.current);
       const others = items.filter((s) => !s.current);
-      const row = (s) => h('div', { class: 'pick session' },
-        h('span', { class: 'avatar s42 ' + (s.current ? 'g3' : 'g5') }, icon('devices')),
-        h('div', { class: 'body' }, h('div', { class: 'n' }, s.device + (s.current ? ' (این دستگاه)' : '')),
-          h('div', { class: 's' }, `${s.ip || '—'} · ${s.current ? 'آنلاین' : 'آخرین فعالیت ' + fmtListTime(s.last_active)}`)),
-        s.current ? null : ibtn('close', 'خاتمه نشست', async () => {
-          if (!(await UI.ask('خاتمه نشست', `از «${s.device}» خارج شوید؟`, 'خاتمه', true))) return;
-          try { await api('DELETE', `/api/sessions/${s.id}`); paint((await api('GET', '/api/sessions')).sessions); } catch (e) { toast(e.message); }
-        }));
       body.replaceChildren(
+        h('div', { class: 'dev-hero' }, h('div', { class: 'dh-ic' }, icon('devices')),
+          h('p', {}, 'با یک حساب کبوتر می‌توانید هم‌زمان روی گوشی، تبلت و مرورگر وارد شوید و همه‌جا پیام‌هایتان یکی باشد.')),
         UI.section('این دستگاه', [cur ? row(cur) : null,
-          others.length ? UI.row('close', 'خاتمه همه نشست‌های دیگر', null, async () => {
-            if (!(await UI.ask('خاتمه همه نشست‌ها', 'از همه دستگاه‌های دیگر خارج می‌شوید.', 'خاتمه', true))) return;
-            try { await api('POST', '/api/sessions/terminate-others'); paint((await api('GET', '/api/sessions')).sessions); toast('انجام شد'); } catch (e) { toast(e.message); }
-          }, 'danger') : null]),
-        others.length ? UI.section('نشست‌های فعال', others.map(row)) : null);
+          others.length ? h('div', { class: 'set-row clickable danger dev-kill', onclick: async () => {
+            if (!(await UI.ask('خاتمه‌ی همه‌ی نشست‌های دیگر', 'از همه‌ی دستگاه‌ها به‌جز این یکی خارج می‌شوید.', 'خاتمه', true))) return;
+            try { await api('POST', '/api/sessions/terminate-others'); await reload(); toast('همه‌ی نشست‌های دیگر خاتمه یافتند'); } catch (e) { toast(e.message); }
+          } }, icon('hand'), h('div', { class: 'body' }, h('div', { class: 'n' }, 'خاتمه‌ی همه‌ی نشست‌های دیگر'))) : null],
+          others.length ? 'از همه‌ی دستگاه‌ها به‌جز همین یکی خارج شوید.' : null),
+        others.length ? UI.section('نشست‌های فعال', others.map(row), 'روی هر نشست بزنید تا جزئیات آن را ببینید یا خاتمه‌اش دهید.') : null);
     };
-    try { paint((await api('GET', '/api/sessions')).sessions); } catch (e) { toast(e.message); }
+    try { await reload(); } catch (e) { toast(e.message); }
     return tab;
   },
 
