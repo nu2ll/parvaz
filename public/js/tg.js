@@ -96,7 +96,7 @@
       stack.replaceChildren(mine, ...top.map((e) => h('span', { class: 'ss' + (e.unseen ? ' unseen' : '') }, userAvatar(e.user, 's32'))));
       stack.hidden = false;
     }
-    const items = [h('button', { type: 'button', class: 'story-item me', onclick: () => (me ? this.openEntry(me) : this.compose()) },
+    const items = [h('button', { type: 'button', class: 'story-item me', onclick: () => (Stories.uploading ? null : me ? this.openEntry(me) : this.compose()) },
       h('span', { class: 'ring' + (me ? ' mine' : ' none') }, userAvatar(S.me, 's54')), !me ? h('span', { class: 'plus' }, icon('plus')) : null,
       h('span', { class: 'nm' }, 'استوری من'))];
     for (const e of f.users) {
@@ -105,5 +105,6 @@
     }
     box.replaceChildren(...items);
     box.hidden = false;
+    Stories.paintUpload?.();
   };
 })();

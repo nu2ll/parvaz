@@ -511,7 +511,8 @@ async function changePassword(user, body) {
 // Server only enforces shape/size; the client owns the meaning of each key.
 const SETTINGS_KEYS = new Set(['theme', 'background', 'text_size', 'send_key', 'folders', 'notify', 'sound', 'animations', 'stickers_recent', 'emoji_recent',
   'accent', 'time_format', 'large_emoji', 'autoplay_gif', 'autoplay_video', 'auto_download', 'notify_private', 'notify_group', 'notify_channel',
-  'notify_preview', 'suggest_stickers', 'loop_stickers', 'bubble_radius', 'chat_list_two_line', 'stories_hidden', 'folders_sidebar']);
+  'notify_preview', 'suggest_stickers', 'loop_stickers', 'bubble_radius', 'chat_list_two_line', 'stories_hidden', 'folders_sidebar',
+  'app_notify', 'bg_service', 'chat_sounds', 'lite', 'story_privacy', 'story_period']);
 function getSettings(user) {
   return { settings: repo.getSettings(user.id) };
 }

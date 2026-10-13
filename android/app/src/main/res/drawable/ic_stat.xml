@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- status bar icon: the paper-plane pigeon, white on transparent -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M18,56 L82,30 C86,28 90,31 89,35 L76,82 C75,86 71,87 68,85 L54,73 L45,82 C43,84 41,83 41,81 L42,66 L74,42 L36,61 L20,62 C15,62 14,58 18,56 Z" />
+</vector>

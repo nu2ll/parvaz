@@ -45,8 +45,11 @@ const Native = (() => {
 window.Native = Native;
 
 // status / navigation bar colours = the screen behind them (Telegram Android)
+// full-screen black screens (stories, photo viewer, story camera, calls) get black bars like Telegram
+const DARK_OVERLAY = '.story-viewer, .lightbox, .scam, .call-ui:not(.mini)';
 App.syncBars = () => {
   if (!Native.ok) return;
+  if (document.querySelector(DARK_OVERLAY)) return Native.bars('#000000', '#000000', false, false);
   const css = getComputedStyle(document.documentElement);
   const surface = (css.getPropertyValue('--surface') || '').trim() || '#ffffff';
   const light = document.documentElement.dataset.theme !== 'dark';
@@ -68,3 +71,9 @@ window.KabootarOpenChat = (id) => {
   UI.closeAllModals?.();
   if (S.chats.has(id)) App.openChat(id); else App.loadChats().then(() => S.chats.has(id) && App.openChat(id)).catch(() => {});
 };
+
+// overlays come and go as body children: follow them
+if (typeof MutationObserver !== 'undefined' && document.body) {
+  let t = 0;
+  new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => App.syncBars?.(), 16); }).observe(document.body, { childList: true });
+}

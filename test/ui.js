@@ -82,7 +82,7 @@ async function until(fn, label, ms = 3000) {
   win.window = win;
   document.addEventListener = (t, fn) => (listeners['doc:' + t] ||= []).push(fn);
   const ctx = vm.createContext(win);
-  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'native', 'media', 'panels', 'recorder', 'creator', 'android', 'attach', 'settings', 'stories', 'calls', 'lock']) {
+  for (const f of ['core', 'sounds', 'ui', 'render', 'wallpaper', 'app', 'native', 'media', 'panels', 'recorder', 'creator', 'android', 'attach', 'settings', 'stories', 'calls', 'lock', 'tg', 'select', 'storycam']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   }
   const run = (code) => vm.runInContext(code, ctx);
@@ -238,6 +238,27 @@ async function until(fn, label, ms = 3000) {
   ok($('.react-burst'), 'double tap sends a quick reaction');
   await sleep(400);
   ok(!$('.menu.msg-menu'), 'double tap does not open the menu');
+  console.log('Telegram selection: messages, chats; story camera');
+  run(`App.enterSelect([S.msgs.get(${saraChat}).list[0].id])`);
+  await sleep(30);
+  ok($('.chat-head.sel-head .sel-n') && text('.chat-head .sel-n') === '۱' && $('.select-bar.tg-sel'), 'message select: count in the top bar, forward at the bottom');
+  ok($('.chat-head.sel-head [title="بازارسال"]'), 'message select: forward / copy / delete in the top bar');
+  run('App.exitSelect()');
+  await sleep(30);
+  ok(!$('.chat-head.sel-head') && !$('.select-bar.tg-sel'), 'message select closes');
+  run(`App.chatMenu(S.chats.get(${saraChat}), { clientX: 1, clientY: 1 })`);
+  await sleep(20);
+  ok($('.csel-head') && $('.ci.csel') && !$('.menu'), 'hold on a chat selects it (no menu)');
+  ok($('.csel-head [title="بایگانی"]') && $('.csel-head [title="حذف"]'), 'chat select: archive / delete in the top bar');
+  run('ChatSel.exit()');
+  await sleep(200);
+  ok(!$('.csel-head') && !$('.ci.csel'), 'chat select closes');
+  run('StoryCam.open()');
+  await sleep(30);
+  ok($('.scam') && $('.scam-shutter') && $('.scam-gal'), 'story camera opens (shutter + gallery)');
+  run('StoryCam.close()');
+  await sleep(250);
+  ok(!$('.scam'), 'story camera closes');
   run('window.matchMedia = globalThis.matchMedia = globalThis.__mm; App.renderMessages()');
 
   console.log('Android shell: title, ⋮ menu, bottom bar, root tabs');

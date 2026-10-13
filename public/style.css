@@ -1693,3 +1693,174 @@ body.emoji-docked .fab-down { display: none; }
 .p-channel .s { color: var(--text-2); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .field.bday { display: flex; gap: 8px; align-items: center; }
 .bday-input, .pc-select { flex: 1; height: 48px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 0 12px; font: inherit; width: 100%; }
+
+/* =====================================================================
+   v3.9 (2): Telegram Android navigation, selection, story camera
+   ===================================================================== */
+/* ---------- screens slide in from the right, the one below shifts left and dims (Telegram) ---------- */
+.stab { transform: translate3d(100%, 0, 0); transition: transform .3s cubic-bezier(.2,.8,.2,1); will-change: transform; }
+.stab.in { transform: none; }
+.stab.in:not(.main) { box-shadow: -6px 0 24px rgba(0,0,0,.14); }
+.stab.behind, .stab.main.behind { transform: translate3d(-30%, 0, 0); filter: none; }
+.stab.out { transform: translate3d(100%, 0, 0); }
+.stab.main { transform: none; }
+.stab::after { content: ''; position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 40; }
+.stab.behind::after { opacity: .22; }
+@media (max-width: 760px) {
+  .chat { transform: translate3d(100%, 0, 0); transition: transform .3s cubic-bezier(.2,.8,.2,1); box-shadow: -8px 0 28px rgba(0,0,0,.22); }
+  body.chat-open .chat { transform: none; }
+  body.chat-open .sidebar { transform: translate3d(-30%, 0, 0); }
+  body.chat-open .sidebar::after { opacity: .25; }
+  .chat::after { content: ''; position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 60; }
+  body.info-open.chat-open .chat { transform: translate3d(-30%, 0, 0); }
+  body.info-open.chat-open .chat::after { opacity: .25; }
+  body.info-open:not(.chat-open) .sidebar { transform: translate3d(-30%, 0, 0); }
+  body.info-open:not(.chat-open) .sidebar::after { opacity: .25; }
+  .info, [dir="rtl"] .info { animation: kbIn .3s cubic-bezier(.2,.8,.2,1) backwards !important; box-shadow: -8px 0 28px rgba(0,0,0,.22); opacity: 1; }
+  .info.info-ghost { position: fixed; inset: 0; width: 100%; z-index: 21; pointer-events: none; animation: kbOut .26s cubic-bezier(.4,0,.6,1) forwards !important; }
+  @keyframes kbIn { from { transform: translate3d(100%, 0, 0); } }
+  @keyframes kbOut { to { transform: translate3d(100%, 0, 0); } }
+  /* swipe back follows the finger */
+  .kb-under::after { opacity: var(--dim, 0) !important; transition: none !important; }
+  body.swiping .kb-page, body.swiping .kb-under { transition: none !important; }
+  body.swiping .sidebar.kb-under, body.swiping .kb-under { visibility: visible !important; }
+  body.swipe-settle .kb-page, body.swipe-settle .kb-under { transition: transform .22s cubic-bezier(.2,.8,.2,1) !important; }
+  body.swipe-settle .kb-under::after { transition: opacity .22s !important; }
+}
+body.no-anim-once .chat, body.no-anim-once .sidebar, body.no-anim-once .stab, body.no-anim-once .info,
+body.no-anim-once .chat::after, body.no-anim-once .sidebar::after, body.no-anim-once .stab::after { transition: none !important; animation: none !important; }
+/* swipe left on a message = reply (right is back) */
+.swipe-ic { right: 8px; left: auto; inset-inline-end: auto; }
+
+/* ---------- chat list selection ---------- */
+.csel-head { position: absolute; top: 0; left: 0; right: 0; height: 56px; z-index: 30; display: flex; align-items: center; gap: 2px; padding: 0 8px;
+  background: var(--surface); direction: ltr; animation: cselIn .18s ease-out; box-shadow: 0 1px 0 var(--border); }
+.csel-head.out { animation: cselOut .18s ease-in forwards; }
+.csel-head .sp, .chat-head.sel-head .sp { flex: 1; }
+.csel-head .ibtn, .chat-head.sel-head .ibtn { color: var(--text); }
+.csel-head .ibtn.danger, .chat-head.sel-head .ibtn.danger { color: var(--danger); }
+.csel-n, .sel-n { font-size: 20px; font-weight: 600; height: 30px; line-height: 30px; overflow: hidden; padding: 0 8px; min-width: 30px; }
+.csel-n span, .sel-n span { display: block; }
+.csel-n span.up, .sel-n span.up { animation: numUp .2s ease-out; }
+.csel-n span.down, .sel-n span.down { animation: numDown .2s ease-out; }
+@keyframes numUp { from { transform: translateY(80%); opacity: 0; } }
+@keyframes numDown { from { transform: translateY(-80%); opacity: 0; } }
+@keyframes cselIn { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes cselOut { to { opacity: 0; transform: translateY(-10px); } }
+.ci.csel { background: color-mix(in srgb, var(--accent) 13%, transparent) !important; }
+.ci .csel-check { position: absolute; top: 44px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center;
+  box-shadow: 0 0 0 2px var(--surface); transform: scale(0); transition: transform .18s cubic-bezier(.3,1.5,.6,1); z-index: 2; }
+.ci.csel .csel-check { transform: scale(1); }
+.ci .csel-check .i { width: 15px; height: 15px; }
+body.chats-selecting .fabs, body.chats-selecting .story-stack { opacity: 0; pointer-events: none; transition: opacity .15s; }
+.bottom-nav.hide-sel { transform: translateY(140%); opacity: 0; pointer-events: none; }
+
+/* ---------- message selection ---------- */
+.chat-head.sel-head { background: var(--surface) !important; margin: 0 !important; height: 56px !important; padding: 0 8px !important; gap: 2px !important;
+  box-shadow: 0 1px 0 var(--border) !important; border-radius: 0 !important; animation: cselIn .16s ease-out; }
+.select-bar.tg-sel { display: flex; justify-content: space-between; align-items: center; direction: ltr; padding: 6px 12px max(8px, env(safe-area-inset-bottom));
+  background: var(--surface); box-shadow: 0 -1px 0 var(--border); }
+.tg-sel .sb-btn { display: flex; gap: 8px; align-items: center; font-weight: 600; color: var(--accent); padding: 10px 16px; border-radius: 22px; font-size: 15px; }
+.tg-sel .sb-btn:active { background: var(--hover); }
+.tg-sel .sb-btn:disabled { opacity: .4; }
+.tg-sel .sb-btn .i { width: 22px; height: 22px; }
+.sel-box { transition: background .15s, border-color .15s, transform .18s cubic-bezier(.3,1.5,.6,1); }
+.sel-box .i { transition: opacity .12s; }
+.msg.selected .sel-box { transform: scale(1.08); }
+.msg.selected::before { transition: opacity .15s; }
+
+/* ---------- story camera + editor (Telegram Android) ---------- */
+.scam { position: fixed; inset: 0; z-index: 300; background: #000; color: #fff; opacity: 0; transform: translateY(5%); overflow: hidden;
+  transition: opacity .22s, transform .28s cubic-bezier(.2,.8,.2,1); touch-action: none; user-select: none; -webkit-user-select: none; }
+.scam.in { opacity: 1; transform: none; }
+.scam.out { opacity: 0; transform: translateY(5%); }
+.scam-view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.scam-view.mirror { transform: scaleX(-1); }
+.scam-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; padding: max(10px, env(safe-area-inset-top)) 10px 18px; direction: ltr; z-index: 3;
+  background: linear-gradient(rgba(0,0,0,.35), transparent); }
+.scam-top .sp { flex: 1; }
+.scam-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgba(0,0,0,.28); transition: opacity .2s, transform .15s; }
+.scam-btn:active { transform: scale(.92); }
+.scam-btn .i { width: 26px; height: 26px; }
+.scam-timer { position: absolute; left: 50%; transform: translateX(-50%); background: #e53935; color: #fff; font-weight: 600; border-radius: 14px; padding: 3px 12px; font-variant-numeric: tabular-nums; }
+.scam-timer[hidden] { display: none; }
+.scam-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 30px max(28px, calc(env(safe-area-inset-bottom) + 20px)); display: flex; align-items: center;
+  justify-content: space-between; direction: ltr; z-index: 3; background: linear-gradient(transparent, rgba(0,0,0,.4)); }
+.scam-gal { width: 46px; height: 46px; border-radius: 12px; overflow: hidden; border: 2px solid #fff; display: grid; place-items: center; background: rgba(255,255,255,.12); color: #fff; transition: opacity .2s; }
+.scam-gal img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scam-shutter { width: 80px; height: 80px; border-radius: 50%; position: relative; display: grid; place-items: center; }
+.scam-shutter .ring { position: absolute; inset: 0; border-radius: 50%; border: 4px solid #fff; transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+.scam-shutter b { width: 64px; height: 64px; border-radius: 50%; background: #fff; transition: transform .2s cubic-bezier(.2,.8,.2,1), background .2s; }
+.scam-shutter.press b { transform: scale(.88); }
+.scam.recording .scam-shutter .ring { transform: scale(1.28); border: 0;
+  background: conic-gradient(#fff calc(var(--p, 0) * 360deg), rgba(255,255,255,.3) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); }
+.scam.recording .scam-shutter b { background: #e53935; transform: scale(.5); }
+.scam.recording .scam-gal, .scam.recording .scam-bottom .scam-btn, .scam.recording .scam-hint, .scam.recording .scam-close { opacity: 0; pointer-events: none; }
+.scam-hint { position: absolute; left: 0; right: 0; bottom: calc(max(28px, calc(env(safe-area-inset-bottom) + 20px)) + 104px); text-align: center; font-size: 13.5px;
+  color: rgba(255,255,255,.9); text-shadow: 0 1px 4px rgba(0,0,0,.6); z-index: 3; animation: hintOut .4s ease 4s forwards; pointer-events: none; }
+@keyframes hintOut { to { opacity: 0; } }
+.scam-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 4; }
+.scam-flash.go { animation: camFlash .35s ease-out; }
+@keyframes camFlash { 0% { opacity: .85; } 100% { opacity: 0; } }
+.scam-nocam { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 30px; text-align: center; z-index: 2; }
+.scam-nocam[hidden] { display: none; }
+.scam-nocam .ic { width: 84px; height: 84px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; margin-bottom: 6px; }
+.scam-nocam .ic .i { width: 42px; height: 42px; }
+.scam-nocam b { font-size: 18px; }
+.scam-nocam span { color: rgba(255,255,255,.7); font-size: 14px; line-height: 1.7; max-width: 300px; }
+.scam-nocam .btn { margin-top: 8px; }
+.scam-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80%; background: #1c1c1d; color: #fff; border-radius: 18px 18px 0 0; z-index: 10;
+  transform: translateY(100%); transition: transform .28s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+.scam-sheet.in { transform: none; }
+.scam-sheet .grip { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.3); margin: 8px auto 4px; flex: none; }
+.scam-sheet .st-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 6px; direction: ltr; flex: none; }
+.scam-sheet .st-head .ibtn { color: #fff; }
+.scam-sheet .st-head b { font-size: 17px; }
+.scam-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; overflow-y: auto; flex: 1; min-height: 240px; }
+.scam-grid .att-tile { border-radius: 0; background: #2a2a2a; }
+.scam-grid .att-tile.loading { opacity: .45; }
+.scam-grid .att-tile .dur { position: absolute; bottom: 4px; right: 6px; font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.scam-grid .att-perm, .scam-grid .att-empty { grid-column: 1 / -1; color: #fff; }
+.scam-shade { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 9; opacity: 0; transition: opacity .2s; }
+.scam-shade.in { opacity: 1; }
+.sp-sheet { padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+.sp-title { font-size: 18px; font-weight: 600; padding: 8px 4px 12px; }
+.sp-opt { display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px 6px; border-radius: 12px; text-align: start; color: #fff; }
+.sp-opt:active { background: rgba(255,255,255,.06); }
+.sp-opt .sq { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: #3390ec; flex: none; }
+.sp-opt + .sp-opt .sq { background: #f68136; }
+.sp-opt .sq .i { width: 22px; height: 22px; color: #fff; }
+.sp-opt .tx { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.sp-opt .tx small { color: rgba(255,255,255,.6); font-size: 13px; }
+.sp-opt .rd { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5); flex: none; transition: border .15s; }
+.sp-opt.on .rd { border: 7px solid #3390ec; }
+.sp-cap { font-size: 14px; color: #8fc8ff; padding: 14px 6px 8px; font-weight: 500; }
+.sp-sheet .chip-sel { background: rgba(255,255,255,.1); color: #fff; }
+.sp-sheet .chip-sel.on { background: #3390ec; }
+.sp-sheet .set-row, .sp-sheet .set-row .n { color: #fff; }
+.sp-done { margin-top: 14px; }
+.sed { position: absolute; inset: 0; z-index: 5; background: #000; opacity: 0; transition: opacity .2s; }
+.sed.in { opacity: 1; }
+.sed-bg { position: absolute; inset: 0; background: center / cover; filter: blur(30px) brightness(.5); transform: scale(1.2); }
+.sed-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.sed-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; padding: max(10px, env(safe-area-inset-top)) 10px 10px; direction: ltr; z-index: 2; }
+.sed-top .sp { flex: 1; }
+.sed-mute { color: #fff !important; background: rgba(0,0,0,.28) !important; }
+.sed-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 12px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,.65));
+  z-index: 2; display: flex; flex-direction: column; gap: 10px; }
+.sed-cap textarea { width: 100%; resize: none; border: 0; outline: none; border-radius: 22px; background: rgba(0,0,0,.45); color: #fff; padding: 11px 16px;
+  font: inherit; font-size: 15.5px; line-height: 1.4; max-height: 110px; display: block; }
+.sed-cap textarea::placeholder { color: rgba(255,255,255,.65); }
+.sed-bar { display: flex; align-items: center; direction: ltr; gap: 10px; }
+.sed-bar .sp { flex: 1; }
+.sed-priv { display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 19px; background: rgba(0,0,0,.45); color: #fff; font-size: 14px; direction: rtl; }
+.sed-priv .i { width: 18px; height: 18px; }
+.sed-priv i { opacity: .6; font-style: normal; }
+.sed-send { width: 54px; height: 54px; border-radius: 50%; background: #3390ec; color: #fff; display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0,0,0,.3); transition: transform .15s; }
+.sed-send:active { transform: scale(.92); }
+.sed-send .i { width: 26px; height: 26px; }
+.scam.editing .scam-top, .scam.editing .scam-bottom, .scam.editing .scam-hint, .scam.editing .scam-nocam { display: none; }
+/* upload progress on "My story" */
+.story-item .ring.uploading, .story-stack .ss.me.uploading {
+  background: conic-gradient(var(--accent) calc(var(--p, 0) * 360deg), color-mix(in srgb, var(--accent) 22%, transparent) 0) !important; }

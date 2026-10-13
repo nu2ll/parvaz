@@ -55,57 +55,82 @@ App.burst = (bubble, emo) => {
   setTimeout(() => b.remove(), 700);
 };
 
-/* ---------- swipe back (chat → list) ---------- */
-(() => {
+/* ---------- swipe back, Telegram Android: drag any screen to the right to go back ----------
+   works on the chat, the profile page and every settings / contacts page; the screen below
+   follows the finger (parallax + dim) and the gesture can be cancelled half way */
+App.swipeBack = (() => {
+  const BLOCK = '.composer, .composer-wrap, .emoji-dock, .emoji-pop, input, textarea, select, .rec-ui, .round-rec, .call-ui, .lightbox, .modal-wrap, .menu, .story-viewer, .scam, .att-sheet, .folders, .stories-bar, .info-tabs, .htabs, .reactions-pop, .p-photo, .range, .cropper, .ep-cats, .chips-select, .csel-head, .backdrop';
+  const target = () => {
+    if (innerWidth > 760) return null;
+    const info = $('#info');
+    if (info && !info.hidden) {
+      const chatOpen = document.body.classList.contains('chat-open');
+      return { page: info, under: chatOpen ? $('#chat') : $('#sidebar'), back: () => { App.closeInfo(true); if (history.state?.info) history.back(); } };
+    }
+    if (document.body.classList.contains('chat-open')) {
+      return { page: $('#chat'), under: $('#sidebar'), back: () => { const s = history.state; App.showEmpty(); if (s?.chat) history.back(); } };
+    }
+    const top = App.side?.top?.();
+    if (top) return { page: top.tab, under: App.side.stack.at(-2)?.tab || App.side.base, back: () => App.side.pop(top) };
+    return null;
+  };
   let st = null;
-  const chatEl = () => $('#chat');
   document.addEventListener('touchstart', (e) => {
-    if (!document.body.classList.contains('chat-open') || innerWidth > 760 || e.touches.length !== 1) return;
-    const chat = chatEl();
-    if (!chat?.contains(e.target) || e.target.closest('.composer, .emoji-pop, input, textarea, .rec-ui, .round-rec, .call-ui, .lightbox, .modal-wrap, .menu')) return;
-    const t = e.touches[0];
-    st = { x: t.clientX, y: t.clientY, dx: 0, on: false, t0: Date.now() };
+    st = null;
+    if (e.touches.length !== 1 || App.dragSelecting || (typeof ChatSel !== 'undefined' && ChatSel.set)) return;
+    if (e.target.closest?.(BLOCK)) return;
+    const t = target();
+    if (!t || !t.page || !t.page.contains(e.target)) return;
+    const p = e.touches[0];
+    st = { x: p.clientX, y: p.clientY, dx: 0, on: false, t0: Date.now(), t };
   }, { passive: true });
   document.addEventListener('touchmove', (e) => {
     if (!st) return;
-    const t = e.touches[0];
-    const dx = t.clientX - st.x, dy = t.clientY - st.y;
-    const back = isRtl() ? -dx : dx; // the chat leaves towards where it came from
+    if (App.dragSelecting) { st = null; return; }
+    const p = e.touches[0];
+    const dx = p.clientX - st.x, dy = p.clientY - st.y;
     if (!st.on) {
       if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { st = null; return; }
-      if (back < 14 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+      if (dx < 14 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
       st.on = true;
+      st.x = p.clientX - 1; // no jump when the drag starts
       document.body.classList.add('swiping');
+      st.t.page.classList.add('kb-page');
+      st.t.under?.classList.add('kb-under');
     }
-    st.dx = Math.max(0, back);
-    const w = innerWidth;
-    chatEl().style.transform = `translateX(${(isRtl() ? -1 : 1) * st.dx}px)`;
-    const side = $('#sidebar');
-    if (side) side.style.transform = `translateX(${(isRtl() ? 1 : -1) * (w * 0.25) * (1 - st.dx / w)}px)`;
-    document.body.style.setProperty('--dim', String(0.3 * (1 - st.dx / w)));
+    st.dx = Math.max(0, p.clientX - st.x);
+    const w = innerWidth, k = Math.min(1, st.dx / w);
+    st.t.page.style.transform = `translate3d(${st.dx}px,0,0)`;
+    if (st.t.under) {
+      st.t.under.style.transform = `translate3d(${(-30 * (1 - k)).toFixed(2)}%,0,0)`;
+      st.t.under.style.setProperty('--dim', (0.25 * (1 - k)).toFixed(3));
+    }
   }, { passive: true });
   const end = () => {
     if (!st) return;
     const s = st;
     st = null;
     if (!s.on) return;
+    const { page, under } = s.t;
     const speed = s.dx / Math.max(1, Date.now() - s.t0);
-    const go = s.dx > innerWidth * 0.33 || speed > 0.6;
-    const chat = chatEl(), side = $('#sidebar');
+    const go = s.dx > innerWidth * 0.3 || (speed > 0.45 && s.dx > 40);
     document.body.classList.add('swipe-settle');
-    chat.style.transform = go ? `translateX(${(isRtl() ? -1 : 1) * innerWidth}px)` : '';
-    if (side) side.style.transform = go ? 'none' : '';
-    document.body.style.setProperty('--dim', go ? '0' : '0.3');
+    page.style.transform = go ? `translate3d(${innerWidth}px,0,0)` : 'translate3d(0,0,0)';
+    if (under) { under.style.transform = go ? 'translate3d(0,0,0)' : 'translate3d(-30%,0,0)'; under.style.setProperty('--dim', go ? '0' : '0.25'); }
+    if (go) Native.haptic?.('tap');
     setTimeout(() => {
+      if (go) {
+        document.body.classList.add('no-anim-once');
+        try { s.t.back(); } catch (err) { console.error(err); }
+      }
       document.body.classList.remove('swiping', 'swipe-settle');
-      chat.style.transform = '';
-      if (side) side.style.transform = '';
-      document.body.style.removeProperty('--dim');
-      if (go) { document.body.classList.add('no-anim-once'); App.closeChat(); setTimeout(() => document.body.classList.remove('no-anim-once'), 50); }
-    }, 220);
+      for (const n of [page, under]) { if (!n) continue; n.style.transform = ''; n.style.removeProperty('--dim'); n.classList.remove('kb-page', 'kb-under'); }
+      if (go) requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.remove('no-anim-once')));
+    }, 230);
   };
   document.addEventListener('touchend', end);
   document.addEventListener('touchcancel', end);
+  return { target };
 })();
 
 /* ---------- stories: folded by default, pull down to open ---------- */

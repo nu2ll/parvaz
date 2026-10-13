@@ -212,7 +212,7 @@ const SETTINGS_PAGES = {
   notifications() {
     const ok = 'Notification' in window;
     push('اعلان‌ها و صداها', [
-      UI.section('اعلان‌های وب', [
+      Native.ok ? null : UI.section('اعلان‌های وب', [
         ok ? UI.switchRow('bell', 'اعلان دسکتاپ', Notification.permission === 'denied' ? 'در تنظیمات مرورگر مسدود شده' : 'وقتی کبوتر باز نیست', S.settings.notify && Notification.permission === 'granted', async (v) => {
           if (v && Notification.permission !== 'granted') {
             const p = await Notification.requestPermission();
@@ -224,6 +224,15 @@ const SETTINGS_PAGES = {
         UI.switchRow('volume', 'صداهای داخل برنامه', 'صدای پیام تازه در گفتگوهای دیگر', S.settings.sound !== false, (v) => { setSetting('sound', v); if (v) Sound.play('notify', true); }),
         UI.switchRow('music', 'صداهای داخل گفتگو', 'صدای ارسال و دریافت پیام، ضبط صدا', S.settings.chat_sounds !== false, (v) => { setSetting('chat_sounds', v); if (v) Sound.play('out', true); }),
       ]),
+      Native.ok ? UI.section('اعلان‌های برنامه', [
+        UI.switchRow('bell', 'اعلان پیام‌ها', Native.has('notifications') ? 'وقتی کبوتر بسته است هم می‌آید' : 'اجازه‌ی اعلان داده نشده، بزنید', S.settings.app_notify !== false && Native.has('notifications'), (v) => {
+          if (v && !Native.has('notifications')) { Native.openNotifySettings(); throw new Error('اول اجازه‌ی اعلان را بدهید'); }
+          setSetting('app_notify', v);
+        }),
+        UI.switchRow('network', 'اتصال پس‌زمینه', 'برای رسیدن پیام‌ها وقتی برنامه بسته است، مثل تلگرام بدون سرویس گوگل', S.settings.bg_service !== false, (v) => setSetting('bg_service', v)),
+        Native.batteryOk() ? null : UI.row('timer', 'بهینه‌سازی باتری', 'خاموشش کنید تا اعلان‌ها دیر نرسند', () => Native.openBattery()),
+        UI.row('settings', 'تنظیمات اعلان سیستم', 'صدا، لرزش و نمایش روی صفحه‌ی قفل', () => Native.openNotifySettings()),
+      ].filter(Boolean)) : null,
       UI.section('اعلان گفتگوها', [
         UI.switchRow('user', 'گفتگوهای خصوصی', null, S.settings.notify_private !== false, (v) => setSetting('notify_private', v)),
         UI.switchRow('group', 'گروه‌ها', null, S.settings.notify_group !== false, (v) => setSetting('notify_group', v)),

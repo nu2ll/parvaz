@@ -336,7 +336,7 @@ UI.swipeReply = (row, bubble, cb) => {
     const p = e.touches[0];
     const mx = p.clientX - sx, my = p.clientY - sy;
     if (!locked) { if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { active = false; return; } if (Math.abs(mx) > 10) locked = true; else return; }
-    const sign = document.documentElement.dir === 'rtl' ? 1 : -1;
+    const sign = -1; // Telegram: swipe a message to the left to reply (right is "back")
     dx = Math.min(90, Math.max(0, mx * sign));
     bubble.style.transform = `translateX(${dx * sign}px)`;
     if (!ic.parentNode) row.append(ic);

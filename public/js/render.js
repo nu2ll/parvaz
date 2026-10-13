@@ -579,7 +579,7 @@ R.message = (c, m, flags = {}) => {
   const selected = S.select && ids.every((id) => S.select.has(id));
   const el = h('div', {
     class: 'msg' + (mine ? ' mine' : '') + (flags.first ? ' first' : '') + (flags.last ? ' last' : '') + (m.pending ? ' pending' : '') + (selected ? ' selected' : '') + (noBg ? ' nobg' : ''),
-    dataset: { id: m.id },
+    dataset: group ? { id: m.id, ids: ids.join(',') } : { id: m.id },
   }, S.select ? h('span', { class: 'sel-box' }, icon('check')) : null, avSlot, bubble);
   if (!m.pending) {
     el.addEventListener('contextmenu', (e) => {
