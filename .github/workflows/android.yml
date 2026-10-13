@@ -19,7 +19,6 @@ jobs:
       - name: Create Android project
         shell: bash
         run: |
-          if [ -f android/app/build.gradle.kts ]; then echo "using android/ from the repo"; exit 0; fi
           mkdir -p "android"
           cat > 'android/settings.gradle.kts' <<'KAB_EOF'
           pluginManagement {
@@ -157,6 +156,7 @@ jobs:
           import android.os.Build
           import android.os.Bundle
           import android.os.Environment
+          import android.view.ViewGroup
           import android.webkit.*
           import android.widget.Toast
           import androidx.activity.ComponentActivity
@@ -294,7 +294,7 @@ jobs:
               override fun onResume() { super.onResume(); web.onResume(); web.evaluateJavascript("window.App && App.ensureConnected && App.ensureConnected()", null) }
               override fun onPause() { web.onPause(); super.onPause() }
               override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); web.saveState(outState) }
-              override fun onDestroy() { (web.parent as? android.view.ViewGroup)?.removeView(web); web.destroy(); super.onDestroy() }
+              override fun onDestroy() { (web.parent as? ViewGroup)?.removeView(web); web.destroy(); super.onDestroy() }
 
               companion object {
                   private const val OFFLINE_PAGE = """<!doctype html><html dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1">
