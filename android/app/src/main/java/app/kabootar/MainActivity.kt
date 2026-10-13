@@ -12,18 +12,20 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.*
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import java.io.IOException
 
 /**
- * Kabootar for Android: a full-screen WebView that only talks to your Kabootar server
- * (BuildConfig.SERVER_URL). Camera / mic for calls, voice & video messages, file picking,
- * downloads, back button and links to the server open inside the app; everything else
- * opens in the browser.
+ * Kabootar for Android. The whole interface (HTML, JS, CSS, icons, stickers) is packed inside
+ * the APK (assets/web) and served locally; the app only talks to your server for data:
+ * /api (messages, chats…), /files (photos, voice…) and /ws (live updates).
  */
 class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
@@ -59,6 +61,8 @@ class MainActivity : ComponentActivity() {
         web = WebView(this)
         setContentView(web)
         web.setBackgroundColor(Color.parseColor("#212121"))
+        web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        web.overScrollMode = View.OVER_SCROLL_NEVER
 
         with(web.settings) {
             javaScriptEnabled = true
@@ -74,10 +78,13 @@ class MainActivity : ComponentActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = "$userAgentString KabootarAndroid/${BuildConfig.VERSION_NAME}"
+            offscreenPreRaster = true
         }
         CookieManager.getInstance().setAcceptCookie(true)
 
         web.webViewClient = object : WebViewClient() {
+            // the UI comes from the APK; only /api, /files and /ws go to the server
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = localAsset(request)
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
                 if (url.host == server.host && url.scheme == "https") return false // stay in the app
@@ -136,6 +143,31 @@ class MainActivity : ComponentActivity() {
         else web.loadUrl(startUrl(intent))
     }
 
+    private val mimeTypes = mapOf(
+        "html" to "text/html", "js" to "text/javascript", "css" to "text/css", "svg" to "image/svg+xml",
+        "png" to "image/png", "webp" to "image/webp", "jpg" to "image/jpeg", "ico" to "image/x-icon",
+        "json" to "application/json", "webmanifest" to "application/manifest+json", "woff2" to "font/woff2"
+    )
+    private val textTypes = setOf("html", "js", "css", "svg", "json", "webmanifest")
+
+    private fun localAsset(request: WebResourceRequest): WebResourceResponse? {
+        val url = request.url
+        if (url.host != server.host || request.method != "GET") return null
+        val path = url.path ?: "/"
+        if (path.startsWith("/api/") || path.startsWith("/files/") || path == "/ws") return null
+        val rel = if (path == "/" || path.isEmpty()) "index.html" else path.trimStart('/')
+        if (rel.contains("..")) return null
+        return try {
+            val stream = assets.open("web/$rel")
+            val ext = rel.substringAfterLast('.', "")
+            WebResourceResponse(
+                mimeTypes[ext] ?: "application/octet-stream",
+                if (ext in textTypes) "utf-8" else null,
+                200, "OK", mapOf("Cache-Control" to "no-cache"), stream
+            )
+        } catch (e: IOException) { null }
+    }
+
     private fun startUrl(intent: Intent?): String {
         val data = intent?.data
         return if (data != null && data.host == server.host) data.toString() else BuildConfig.SERVER_URL + "/"
@@ -149,7 +181,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); web.onResume(); web.evaluateJavascript("window.App && App.ensureConnected && App.ensureConnected()", null) }
     override fun onPause() { web.onPause(); super.onPause() }
     override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); web.saveState(outState) }
-    override fun onDestroy() { (web.parent as? android.view.ViewGroup)?.removeView(web); web.destroy(); super.onDestroy() }
+    override fun onDestroy() { (web.parent as? ViewGroup)?.removeView(web); web.destroy(); super.onDestroy() }
 
     companion object {
         private const val OFFLINE_PAGE = """<!doctype html><html dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1">

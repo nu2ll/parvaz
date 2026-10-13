@@ -104,6 +104,7 @@ setInterval(() => {
 }, 15_000);
 
 // PWA: a tiny service worker makes Kabootar installable
-if (navigator.serviceWorker && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
+if (navigator.serviceWorker && /KabootarAndroid/.test(navigator.userAgent)) navigator.serviceWorker.getRegistrations?.().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
+else if (navigator.serviceWorker && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 App.boot();

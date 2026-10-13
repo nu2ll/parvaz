@@ -1411,3 +1411,27 @@ html, body { overscroll-behavior: none; }
 .chat-head > .back svg, .stab-head > .ibtn:first-child svg, .modal-head > .ibtn:first-child svg { transform: scaleX(-1); }
 .rec-ui .rec-lock { inset-inline-end: auto; right: -58px; }
 .rec-ui .rec-hint { transform: translateX(calc(var(--slide, 0px) * var(--dirx, -1))); }
+
+/* =====================================================================
+   v3.7 performance: smooth on phones (transform/opacity only, no live blur)
+   ===================================================================== */
+/* blur over scrolling content is the #1 cause of jank in Android WebView: use solid glass instead */
+.touch .bottom-nav, .touch .chat-head > .back, .touch .chat-head .who, .touch .chat-head .head-actions, .touch .menu, .touch .rec-pill {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.touch .bottom-nav { background: color-mix(in srgb, var(--surface) 97%, transparent); }
+.touch .chat-head > .back, .touch .chat-head .who, .touch .chat-head .head-actions { background: color-mix(in srgb, var(--float) 96%, transparent); }
+/* rows off-screen aren't painted at all */
+.list > .ci { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+.ci, .msg, .story-item { contain: layout style; }
+.messages { will-change: scroll-position; }
+.chat, .sidebar, .stab, .bottom-nav, .fabs { backface-visibility: hidden; }
+/* lite phones: shorter, simpler motion */
+.lite *, .lite *::before, .lite *::after { animation-duration: .16s !important; transition-duration: .16s !important; }
+.lite .menu .mi, .lite .reactions-pop button, .lite .stories-open .story-item { animation: none !important; }
+.lite .bubble, .lite .composer, .lite .send-btn, .lite .bottom-nav, .lite .fab, .lite .fab-cam { box-shadow: none !important; }
+.lite .ripple { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+/* inside the Android app there is no browser chrome to account for */
+.in-app body { overscroll-behavior: none; }

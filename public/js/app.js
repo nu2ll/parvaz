@@ -232,7 +232,7 @@ App.repaintMe = () => {
   App.updateNav();
 };
 
-App.version = () => String(S.config.version || '3.6.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+App.version = () => String(S.config.version || '3.7.0').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 App.searching = () => !!el.search?.value.trim() || document.activeElement === el.search;
 App.endSearch = () => { el.search.value = ''; el.search.blur(); $('#sidebar').classList.remove('searching'); App.renderSidebar(); };
 
@@ -318,6 +318,7 @@ App.renderSidebar = () => {
   if (typeof Stories !== 'undefined') Stories.renderBar(el.storiesBar);
   const list = el.list;
   const scroll = list.scrollTop;
+  // build into a detached fragment-like array; cached rows keep their nodes (and loaded images)
   list.replaceChildren();
   // folders
   const folders = App.folders();
@@ -349,7 +350,9 @@ App.renderSidebar = () => {
       ? 'هنوز گفتگویی ندارید.\nبا دکمه ✎ پایین یک گفتگو، گروه یا کانال بسازید یا از جستجو کسی را پیدا کنید.'
       : 'گفتگویی در این پوشه نیست'));
   }
-  chats.forEach((c) => list.append(R.chatItem(c)));
+  const rows = [...list.childNodes];
+  for (const c of chats) rows.push(R.chatItemCached(c, 'main'));
+  list.replaceChildren(...rows);
   list.scrollTop = scroll;
   el.mainTab.classList.toggle('empty', !chats.length);
 };
@@ -371,7 +374,7 @@ App.renderArchive = () => {
   const tab = App.archiveTab;
   if (!tab) return;
   const chats = App.sortedChats(true);
-  tab.list.replaceChildren(...(chats.length ? chats.map((c) => R.chatItem(c)) : [h('div', { class: 'empty-hint' }, 'بایگانی خالی است.\nگفتگوها را با کلیک راست بایگانی کنید.')]));
+  tab.list.replaceChildren(...(chats.length ? chats.map((c) => R.chatItemCached(c, 'archive')) : [h('div', { class: 'empty-hint' }, 'بایگانی خالی است.\nگفتگوها را با کلیک راست بایگانی کنید.')]));
 };
 
 // mobile back button carries the unread counter of the other chats (Web K)

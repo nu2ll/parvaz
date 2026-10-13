@@ -172,6 +172,17 @@ R.typingDots = () => h('span', { class: 'tdots' }, h('i'), h('i'), h('i'));
 const nameColor = (id) => 'c' + (Math.abs(id) % 7);
 
 /* ---------- chat list row ---------- */
+// cached rows: rebuilt only when the chat (or its typing/draft/selection state) actually changed
+R.rowCache = { main: new Map(), archive: new Map() };
+R.chatItemCached = (c, ctx = 'main') => {
+  const cache = R.rowCache[ctx];
+  const sig = JSON.stringify(c) + '|' + (R.typingText(c.id) || '') + '|' + (S.drafts[c.id] || '') + '|' + (c.id === S.active) + '|' + (S.settings.time_format || '') + '|' + new Date().toDateString();
+  const hit = cache.get(c.id);
+  if (hit && hit.sig === sig) return hit.el;
+  const el = R.chatItem(c);
+  cache.set(c.id, { sig, el });
+  return el;
+};
 R.chatItem = (c) => {
   const last = c.last_message;
   const draft = S.drafts[c.id];

@@ -158,6 +158,14 @@ const ICONS_O = {
   oMirror: 'M12 3.5v17 M9 7L4 17h5z M15 7l5 10h-5z',
 };
 const SVGNS = 'http://www.w3.org/2000/svg';
+// phones with few cores / little memory get the "lite" look: no blur, fewer shadows, shorter animations
+try {
+  const weak = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.deviceMemory && navigator.deviceMemory <= 3);
+  const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  if (touch) document.documentElement.classList.add('touch');
+  if (weak) document.documentElement.classList.add('lite');
+  if (/KabootarAndroid/.test(navigator.userAgent)) document.documentElement.classList.add('in-app');
+} catch {}
 function icon(name, cls) {
   const s = document.createElementNS(SVGNS, 'svg');
   s.setAttribute('viewBox', '0 0 24 24');
