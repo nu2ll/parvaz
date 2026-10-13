@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -11,7 +12,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.view.View
 import android.webkit.*
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
                     } else { pendingPermission = request; askPermissions.launch(need.toTypedArray()) }
                 }
             }
-            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean {
                 filePathCallback?.onReceiveValue(null)
                 filePathCallback = callback
                 return try { pickFiles.launch(params.createIntent()); true } catch (e: Exception) { filePathCallback = null; false }
@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
                     .addRequestHeader("User-Agent", userAgent)
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimeType))
-                (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+                (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
                 Toast.makeText(this, "در حال دانلود…", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         }
