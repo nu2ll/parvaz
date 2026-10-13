@@ -1,0 +1,30 @@
+name: Android APK
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Kabootar server URL"
+        required: false
+        default: "https://kabootar.up.railway.app"
+  push:
+    paths: ["android/**", ".github/workflows/android.yml"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v3
+        with: { gradle-version: "8.7" }
+      - name: Build APK
+        working-directory: android
+        env:
+          KABOOTAR_URL: ${{ github.event.inputs.server_url }}
+        run: gradle assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kabootar-apk
+          path: android/app/build/outputs/apk/release/*.apk
