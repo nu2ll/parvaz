@@ -20,343 +20,103 @@ jobs:
       - name: Create Android project
         shell: bash
         run: |
-          mkdir -p "android"
-          cat > 'android/settings.gradle.kts' <<'KAB_EOF'
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          rm -rf android && base64 -d > a.txz <<'KAB_EOF'
+          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
+          KAB_EOF
+          echo "eea23b21b37eefaf7813dec6039fe33713a244d0fd287ca1a63a8790f408de17  a.txz" | sha256sum -c || { echo "FILE IS CUT OFF: paste the whole yml again"; exit 1; }
+          tar -xJf a.txz && rm a.txz && find android -type f
+      - name: Pack the interface into the APK
+        shell: bash
+        run: |
+          if [ ! -f public/index.html ]; then echo "public/index.html not found: the Kabootar project must be at the root of the repo"; exit 1; fi
+          rm -rf android/app/src/main/assets/web
+          mkdir -p android/app/src/main/assets
+          cp -r public android/app/src/main/assets/web
+          rm -f android/app/src/main/assets/web/sw.js
+          echo "packed $(find android/app/src/main/assets/web -type f | wc -l) files"
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { gradle-version: "8.7" }
+      - name: Build APK
+        working-directory: android
+        env:
+          KABOOTAR_URL: ${{ github.event.inputs.server_url }}
+        run: |
+          gradle assembleRelease --no-daemon > build.log 2>&1 || {
+            echo "=========== ERROR ==========="
+            grep -E "^e: |error:|What went wrong" -A8 build.log | head -80
+            exit 1
           }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
-          }
-          rootProject.name = "Kabootar"
-          include(":app")
-          KAB_EOF
-          mkdir -p "android"
-          cat > 'android/build.gradle.kts' <<'KAB_EOF'
-          plugins {
-              id("com.android.application") version "8.5.2" apply false
-              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-          }
-          KAB_EOF
-          mkdir -p "android"
-          cat > 'android/gradle.properties' <<'KAB_EOF'
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          kotlin.code.style=official
-          # آدرس سرور کبوتر شما. اپ فقط به همین سرور وصل می‌شود.
-          kabootarUrl=https://kabootar.up.railway.app
-          KAB_EOF
-          mkdir -p "android/app"
-          cat > 'android/app/build.gradle.kts' <<'KAB_EOF'
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-          }
-
-          // server address: gradle.properties (kabootarUrl) or the KABOOTAR_URL environment variable
-          val serverUrl: String = (System.getenv("KABOOTAR_URL")?.takeIf { it.isNotBlank() }
-              ?: (project.findProperty("kabootarUrl") as String?) ?: "https://kabootar.up.railway.app").trimEnd('/')
-
-          android {
-              namespace = "app.kabootar"
-              compileSdk = 34
-
-              defaultConfig {
-                  applicationId = "app.kabootar"
-                  minSdk = 26
-                  targetSdk = 34
-                  versionCode = 37
-                  versionName = "3.7.0"
-                  buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
-                  manifestPlaceholders["serverHost"] = serverUrl.substringAfter("://").substringBefore("/").substringBefore(":")
-              }
-
-              buildTypes {
-                  release {
-                      isMinifyEnabled = false
-                      // signed with the debug key so the APK installs directly; use your own keystore for Play Store
-                      signingConfig = signingConfigs.getByName("debug")
-                  }
-              }
-              buildFeatures { buildConfig = true }
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-              kotlinOptions { jvmTarget = "17" }
-              lint { checkReleaseBuilds = false; abortOnError = false }
-          }
-
-          dependencies {
-              implementation("androidx.core:core-ktx:1.13.1")
-              implementation("androidx.activity:activity-ktx:1.9.1")
-              implementation("androidx.webkit:webkit:1.11.0")
-          }
-          KAB_EOF
-          mkdir -p "android/app/src/main"
-          cat > 'android/app/src/main/AndroidManifest.xml' <<'KAB_EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.RECORD_AUDIO" />
-              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-              <uses-permission android:name="android.permission.VIBRATE" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-              <uses-feature android:name="android.hardware.camera" android:required="false" />
-              <uses-feature android:name="android.hardware.microphone" android:required="false" />
-
-              <application
-                  android:label="@string/app_name"
-                  android:icon="@mipmap/ic_launcher"
-                  android:roundIcon="@mipmap/ic_launcher"
-                  android:supportsRtl="true"
-                  android:usesCleartextTraffic="false"
-                  android:hardwareAccelerated="true"
-                  android:theme="@style/Theme.Kabootar">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTask"
-                      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density"
-                      android:windowSoftInputMode="adjustResize">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                      <!-- open kabootar links (invites, @usernames) straight in the app -->
-                      <intent-filter android:autoVerify="false">
-                          <action android:name="android.intent.action.VIEW" />
-                          <category android:name="android.intent.category.DEFAULT" />
-                          <category android:name="android.intent.category.BROWSABLE" />
-                          <data android:scheme="https" android:host="${serverHost}" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          KAB_EOF
-          mkdir -p "android/app/src/main/java/app/kabootar"
-          cat > 'android/app/src/main/java/app/kabootar/MainActivity.kt' <<'KAB_EOF'
-          package app.kabootar
-
-          import android.Manifest
-          import android.annotation.SuppressLint
-          import android.app.DownloadManager
-          import android.content.ActivityNotFoundException
-          import android.content.Context
-          import android.content.Intent
-          import android.content.pm.PackageManager
-          import android.graphics.Color
-          import android.net.Uri
-          import android.os.Build
-          import android.os.Bundle
-          import android.os.Environment
-          import android.view.View
-          import android.view.ViewGroup
-          import android.webkit.*
-          import android.widget.Toast
-          import androidx.activity.ComponentActivity
-          import androidx.activity.OnBackPressedCallback
-          import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.core.content.ContextCompat
-          import java.io.IOException
-
-          /**
-           * Kabootar for Android. The whole interface (HTML, JS, CSS, icons, stickers) is packed inside
-           * the APK (assets/web) and served locally; the app only talks to your server for data:
-           * /api (messages, chats…), /files (photos, voice…) and /ws (live updates).
-           */
-          class MainActivity : ComponentActivity() {
-              private lateinit var web: WebView
-              private val server: Uri by lazy { Uri.parse(BuildConfig.SERVER_URL) }
-              private var filePathCallback: ValueCallback<Array<Uri>>? = null
-              private var pendingPermission: PermissionRequest? = null
-
-              private val pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                  val cb = filePathCallback ?: return@registerForActivityResult
-                  filePathCallback = null
-                  cb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data) ?: emptyArray())
-              }
-
-              private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-                  val req = pendingPermission ?: return@registerForActivityResult
-                  pendingPermission = null
-                  val allowed = req.resources.filter { res ->
-                      when (res) {
-                          PermissionRequest.RESOURCE_VIDEO_CAPTURE -> granted[Manifest.permission.CAMERA] == true || has(Manifest.permission.CAMERA)
-                          PermissionRequest.RESOURCE_AUDIO_CAPTURE -> granted[Manifest.permission.RECORD_AUDIO] == true || has(Manifest.permission.RECORD_AUDIO)
-                          else -> false
-                      }
-                  }
-                  if (allowed.isEmpty()) req.deny() else req.grant(allowed.toTypedArray())
-              }
-
-              private fun has(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
-
-              @SuppressLint("SetJavaScriptEnabled")
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  window.statusBarColor = Color.TRANSPARENT
-                  web = WebView(this)
-                  setContentView(web)
-                  web.setBackgroundColor(Color.parseColor("#212121"))
-                  web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                  web.overScrollMode = View.OVER_SCROLL_NEVER
-
-                  with(web.settings) {
-                      javaScriptEnabled = true
-                      domStorageEnabled = true
-                      databaseEnabled = true
-                      mediaPlaybackRequiresUserGesture = false
-                      allowFileAccess = false
-                      allowContentAccess = true
-                      setSupportZoom(false)
-                      builtInZoomControls = false
-                      displayZoomControls = false
-                      textZoom = 100
-                      cacheMode = WebSettings.LOAD_DEFAULT
-                      mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                      userAgentString = "$userAgentString KabootarAndroid/${BuildConfig.VERSION_NAME}"
-                      offscreenPreRaster = true
-                  }
-                  CookieManager.getInstance().setAcceptCookie(true)
-
-                  web.webViewClient = object : WebViewClient() {
-                      // the UI comes from the APK; only /api, /files and /ws go to the server
-                      override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = localAsset(request)
-                      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                          val url = request.url
-                          if (url.host == server.host && url.scheme == "https") return false // stay in the app
-                          return try { startActivity(Intent(Intent.ACTION_VIEW, url)); true } catch (e: ActivityNotFoundException) { true }
-                      }
-                      override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                          if (request.isForMainFrame) view.loadData(OFFLINE_PAGE, "text/html; charset=utf-8", "UTF-8")
-                      }
-                  }
-
-                  web.webChromeClient = object : WebChromeClient() {
-                      override fun onPermissionRequest(request: PermissionRequest) {
-                          runOnUiThread {
-                              if (Uri.parse(request.origin.toString()).host != server.host) { request.deny(); return@runOnUiThread }
-                              val need = mutableListOf<String>()
-                              if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in request.resources && !has(Manifest.permission.CAMERA)) need += Manifest.permission.CAMERA
-                              if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources && !has(Manifest.permission.RECORD_AUDIO)) need += Manifest.permission.RECORD_AUDIO
-                              if (need.isEmpty()) {
-                                  request.grant(request.resources.filter { it == PermissionRequest.RESOURCE_VIDEO_CAPTURE || it == PermissionRequest.RESOURCE_AUDIO_CAPTURE }.toTypedArray())
-                              } else { pendingPermission = request; askPermissions.launch(need.toTypedArray()) }
-                          }
-                      }
-                      override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean {
-                          filePathCallback?.onReceiveValue(null)
-                          filePathCallback = callback
-                          return try { pickFiles.launch(params.createIntent()); true } catch (e: Exception) { filePathCallback = null; false }
-                      }
-                  }
-
-                  web.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-                      try {
-                          val req = DownloadManager.Request(Uri.parse(url))
-                              .setMimeType(mimeType)
-                              .addRequestHeader("User-Agent", userAgent)
-                              .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                              .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimeType))
-                          (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
-                          Toast.makeText(this, "در حال دانلود…", Toast.LENGTH_SHORT).show()
-                      } catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                  }
-
-                  // back: close menus / chat / pages inside the web app first, like the native Telegram
-                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-                      override fun handleOnBackPressed() {
-                          web.evaluateJavascript("(window.KabootarBack && window.KabootarBack()) ? 1 : 0") { handled ->
-                              if (handled != "1") { if (web.canGoBack()) web.goBack() else finish() }
-                          }
-                      }
-                  })
-
-                  if (Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)) {
-                      registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
-                  }
-
-                  if (savedInstanceState != null) web.restoreState(savedInstanceState)
-                  else web.loadUrl(startUrl(intent))
-              }
-
-              private val mimeTypes = mapOf(
-                  "html" to "text/html", "js" to "text/javascript", "css" to "text/css", "svg" to "image/svg+xml",
-                  "png" to "image/png", "webp" to "image/webp", "jpg" to "image/jpeg", "ico" to "image/x-icon",
-                  "json" to "application/json", "webmanifest" to "application/manifest+json", "woff2" to "font/woff2"
-              )
-              private val textTypes = setOf("html", "js", "css", "svg", "json", "webmanifest")
-
-              private fun localAsset(request: WebResourceRequest): WebResourceResponse? {
-                  val url = request.url
-                  if (url.host != server.host || request.method != "GET") return null
-                  val path = url.path ?: "/"
-                  if (path.startsWith("/api/") || path.startsWith("/files/") || path == "/ws") return null
-                  val rel = if (path == "/" || path.isEmpty()) "index.html" else path.trimStart('/')
-                  if (rel.contains("..")) return null
-                  return try {
-                      val stream = assets.open("web/$rel")
-                      val ext = rel.substringAfterLast('.', "")
-                      WebResourceResponse(
-                          mimeTypes[ext] ?: "application/octet-stream",
-                          if (ext in textTypes) "utf-8" else null,
-                          200, "OK", mapOf("Cache-Control" to "no-cache"), stream
-                      )
-                  } catch (e: IOException) { null }
-              }
-
-              private fun startUrl(intent: Intent?): String {
-                  val data = intent?.data
-                  return if (data != null && data.host == server.host) data.toString() else BuildConfig.SERVER_URL + "/"
-              }
-
-              override fun onNewIntent(intent: Intent) {
-                  super.onNewIntent(intent)
-                  intent.data?.let { if (it.host == server.host) web.loadUrl(it.toString()) }
-              }
-
-              override fun onResume() { super.onResume(); web.onResume(); web.evaluateJavascript("window.App && App.ensureConnected && App.ensureConnected()", null) }
-              override fun onPause() { web.onPause(); super.onPause() }
-              override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); web.saveState(outState) }
-              override fun onDestroy() { (web.parent as? ViewGroup)?.removeView(web); web.destroy(); super.onDestroy() }
-
-              companion object {
-                  private const val OFFLINE_PAGE = """<!doctype html><html dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1">
-          <body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#212121;color:#fff;font-family:sans-serif;text-align:center">
-          <div style="font-size:56px">🕊</div><h3>به سرور کبوتر وصل نشدیم</h3><p style="color:#aaa">اینترنت یا VPN را بررسی کنید</p>
-          <button onclick="history.back();location.reload()" style="margin-top:12px;background:#8774e1;color:#fff;border:0;border-radius:22px;padding:12px 28px;font-size:16px">تلاش دوباره</button></body></html>"""
-              }
-          }
-          KAB_EOF
-          mkdir -p "android/app/src/main/res/values"
-          cat > 'android/app/src/main/res/values/strings.xml' <<'KAB_EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">کبوتر</string>
-          </resources>
-          KAB_EOF
-          mkdir -p "android/app/src/main/res/values"
-          cat > 'android/app/src/main/res/values/themes.xml' <<'KAB_EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="Theme.Kabootar" parent="android:Theme.Material.NoActionBar">
-                  <item name="android:windowBackground">@color/bg</item>
-                  <item name="android:statusBarColor">@color/bg</item>
-                  <item name="android:navigationBarColor">@color/bg</item>
-                  <item name="android:colorAccent">@color/accent</item>
-              </style>
-              <color name="bg">#212121</color>
-              <color name="accent">#8774E1</color>
-              <color name="icon_bg">#3390EC</color>
-          </resources>
-          KAB_EOF
-          mkdir -p "android/app/src/main/res/mipmap-anydpi-v26"
-       
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kabootar-apk
+          path: android/app/build/outputs/apk/release/*.apk
+# ===== END OF FILE: if you can see this line, the file is complete =====
